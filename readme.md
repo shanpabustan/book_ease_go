@@ -1,6 +1,6 @@
 # Golang Fiber v2 Project - FDSAP Intern Project Template
 
-Welcome to the Golang Fiber v2 project! This repository contains a web application built using [Fiber v2](https://github.com/gofiber/fiber), a fast, lightweight, and flexible Go web framework.
+Welcome to the Golang Fiber v2 backend development project! This repository contains a backend service built using [Fiber v2](https://github.com/gofiber/fiber), a fast, lightweight, and flexible Go web framework tailored for modern backend development.
 
 ## Features
 
