@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	"intern_template_v1/controller"
-	"intern_template_v1/middleware"
-	"intern_template_v1/routes"
+	//"book_ease_go/controller"
+	"book_ease_go/middleware"
+	"book_ease_go/routes"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -29,7 +29,7 @@ func main() {
 	// API ROUTES
 	// Sample Endpoint
 	// localhost:5566/check
-	app.Get("/check", controller.SampleController)
+	//app.Get("/check", controller.SampleController)
 
 	// Do not remove this endpoint
 	app.Get("/favicon.ico", func(c *fiber.Ctx) error {
