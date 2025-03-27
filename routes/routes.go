@@ -17,9 +17,13 @@ func AppRoutes(app *fiber.App) {
 	login := app.Group("/login")
 	login.Post("/login", controller.Login)
 
-	//Register User
-	reg := app.Group("/reg")
-	reg.Post("/register", controller.CreateStudent)
+
+	//student routes
+	stud := app.Group("/stud")
+	stud.Post("/register", controller.CreateStudent)
+	stud.Get("/get-all", controller.FetchAllBooks)
+	stud.Get("/get-borrowed", controller.FetchBorrowedBooks)
+
 
 	//Reserve Book
 	reserve := app.Group("/reserve")
@@ -35,5 +39,5 @@ func AppRoutes(app *fiber.App) {
 
 
 
-	// --------------------------
+	
 }
