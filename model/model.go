@@ -3,78 +3,97 @@ package model
 import (
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
+	
 )
 
-type User struct {
-	UserID        string         `gorm:"primaryKey;size:20"`
-	UserType      string         `gorm:"type:varchar(20);check:user_type IN ('Admin', 'Student')"`
-	LastName      string         `gorm:"size:255;not null"`
-	FirstName     string         `gorm:"size:255;not null"`
-	MiddleName    *string        `gorm:"size:255"`
-	Suffix        *string        `gorm:"size:4"`
-	Email         string         `gorm:"size:255;unique;not null"`
-	PasswordHash  string         `gorm:"not null"`
-	Program       *string        `gorm:"size:50"`
-	YearLevel     *string        `gorm:"size:20"`
-	ContactNumber *string        `gorm:"size:20"`
-	CreatedAt     time.Time      `gorm:"autoCreateTime"`
-	Reservations  []Reservation  `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
-	BorrowedBooks []BorrowedBook `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
-	Notifications []Notification `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
-}
+	type User struct {
+		UserID        string    `gorm:"primaryKey;size:20" json:"user_id"`
+		UserType      string    `gorm:"size:20;check:user_type IN ('Admin','Student')" json:"user_type"`
+		LastName      string    `gorm:"size:255;not null" json:"last_name"`
+		FirstName     string    `gorm:"size:255;not null" json:"first_name"`
+		MiddleName    *string   `gorm:"size:255" json:"middle_name,omitempty"`
+		Suffix        *string   `gorm:"size:4" json:"suffix,omitempty"`
+		Email         string    `gorm:"size:255;unique;not null" json:"email"`
+		Password  string    `gorm:"type:text;not null" json:"password"`
+		Program       *string   `gorm:"size:50" json:"program,omitempty"`
+		YearLevel     *string   `gorm:"size:20" json:"year_level,omitempty"`
+		ContactNumber *string   `gorm:"size:20" json:"contact_number,omitempty"`
+		AvatarPath    string    `gorm:"size:255" json:"avatar_path"`
+		IsActive bool `gorm:"default:true" json:"is_active"`
+		CreatedAt     time.Time `gorm:"autoCreateTime" json:"created_at"`
 
-func (u *User) BeforeCreate(tx *gorm.DB) (err error) {
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.PasswordHash), bcrypt.DefaultCost)
-	if err != nil {
-		return err
+		// Relationships
+		Reservations   []Reservation   `gorm:"foreignKey:UserID"`
+		BorrowedBooks  []BorrowedBook  `gorm:"foreignKey:UserID"`
+		Notifications  []Notification  `gorm:"foreignKey:UserID"`
 	}
-	u.PasswordHash = string(hashedPassword)
-	return nil
-}
+
+
 
 type Book struct {
-	BookID          uint           `gorm:"primaryKey;autoIncrement"`
-	Title           string         `gorm:"size:255;not null"`
-	Author          string         `gorm:"size:255;not null"`
-	Category        string         `gorm:"size:255;not null"`
-	ISBN            string         `gorm:"size:20;unique;not null"`
-	LibrarySection  string         `gorm:"size:255;not null"`
-	ShelfLocation   string         `gorm:"size:50;not null"`
-	TotalCopies     int            `gorm:"not null;check:total_copies >= 0"`
-	AvailableCopies int            `gorm:"not null;check:available_copies >= 0"`
-	BookCondition   string         `gorm:"type:varchar(10);check:book_condition IN ('New', 'Used')"`
-	CreatedAt       time.Time      `gorm:"autoCreateTime"`
-	Reservations    []Reservation  `gorm:"foreignKey:BookID;constraint:OnDelete:CASCADE"`
-	BorrowedBooks   []BorrowedBook `gorm:"foreignKey:BookID;constraint:OnDelete:CASCADE"`
+	BookID          int       `gorm:"primaryKey" json:"book_id"`
+	Title           string    `gorm:"not null" json:"title"`
+	Author          string    `gorm:"not null" json:"author"`
+	Category        string    `gorm:"not null" json:"category"`
+	ISBN            string    `gorm:"not null" json:"isbn"`
+	LibrarySection  string    `gorm:"not null" json:"library_section"`
+	ShelfLocation   string    `gorm:"not null" json:"shelf_location"`
+	TotalCopies     int       `gorm:"not null" json:"total_copies"`
+	AvailableCopies int       `gorm:"not null" json:"available_copies"`
+	BookCondition   string    `gorm:"not null" json:"book_condition"`
+	Picture         string    `gorm:"type:text" json:"picture"` // base64-encoded image
+	YearPublished   int       `gorm:"not null" json:"year_published"`
+	Version         int       `gorm:"not null" json:"version"`
+	Description     string    `gorm:"type:text" json:"description"`
+
+	// Relationships
+	Reservations   []Reservation   `gorm:"foreignKey:BookID" json:"reservations,omitempty"`
+	BorrowedBooks  []BorrowedBook  `gorm:"foreignKey:BookID" json:"borrowed_books,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
 }
 
 type Reservation struct {
-	ReservationID       uint      `gorm:"primaryKey;autoIncrement"`
-	UserID              string    `gorm:"size:20;not null"`
-	BookID              uint      `gorm:"not null"`
-	PreferredPickupDate time.Time `gorm:"not null"`
-	Status              string    `gorm:"type:varchar(50);default:'Pending';check:status IN ('Pending', 'Approved', 'Cancelled')"`
+	ReservationID       int       `gorm:"primaryKey" json:"reservation_id"`
+	UserID              string    `gorm:"size:20;not null" json:"user_id"` 
+	BookID              int       `gorm:"not null" json:"book_id"`
+	PreferredPickupDate time.Time `gorm:"not null" json:"preferred_pickup_date"`
+	Expiry              time.Time `gorm:"column:expired_at;not null" json:"expired_at"`
+	Status 				string 	`gorm:"type:varchar(50);default:'Pending';check:status IN ('Pending', 'Approved', 'Cancelled', 'Expired')" json:"status"`
 	CreatedAt           time.Time `gorm:"autoCreateTime"`
-	User                User      `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
-	Book                Book      `gorm:"foreignKey:BookID;constraint:OnDelete:CASCADE"`
+
+	User User `gorm:"foreignKey:UserID;references:UserID;constraint:OnDelete:CASCADE"`
+	Book Book `gorm:"foreignKey:BookID;references:BookID;constraint:OnDelete:CASCADE"`
 }
 
 type BorrowedBook struct {
-	BorrowID            uint      `gorm:"primaryKey;autoIncrement"`
-	UserID              string    `gorm:"size:20;not null"`
-	BookID              uint      `gorm:"not null"`
-	BorrowDate          time.Time `gorm:"autoCreateTime"`
-	DueDate             time.Time `gorm:"not null"`
-	ReturnDate          *time.Time
-	Status              string  `gorm:"type:varchar(50);default:'Pending';check:status IN ('Pending', 'Approved', 'Returned', 'Overdue', 'Damaged')"`
-	BookConditionBefore string  `gorm:"type:varchar(20);check:book_condition_before IN ('New', 'Good', 'Fair', 'Poor')"`
-	BookConditionAfter  *string `gorm:"type:varchar(20);check:book_condition_after IN ('New', 'Good', 'Fair', 'Poor', 'Damaged')"`
-	PenaltyAmount       float64 `gorm:"type:decimal(10,2);default:0"`
-	User                User    `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
-	Book                Book    `gorm:"foreignKey:BookID;constraint:OnDelete:CASCADE"`
+    BorrowID            int        `gorm:"primaryKey;column:borrow_id" json:"borrow_id"` // Primary key
+    ReservationID       int        `gorm:"not null" json:"reservation_id"`      // Foreign key from Reservation
+    UserID              string     `gorm:"size:20;not null" json:"user_id"`     // Foreign key from User
+    BookID              int        `gorm:"not null" json:"book_id"`              // Foreign key from Book
+    BorrowDate          time.Time  `gorm:"autoCreateTime" json:"borrow_date"`    // Timestamp when borrowed
+    DueDate             time.Time  `gorm:"not null" json:"due_date"`             // Due date for return
+    ReturnDate          *time.Time `json:"return_date,omitempty"`                 // Optional return date
+    Status              string     `gorm:"type:varchar(50);default:'Pending';check:status IN ('Pending', 'Approved', 'Returned', 'Overdue', 'Damaged')" json:"status"`
+    BookConditionBefore string     `gorm:"type:varchar(20);check:book_condition_before IN ('New', 'Good', 'Fair', 'Poor')" json:"book_condition_before"`
+    BookConditionAfter  *string    `gorm:"type:varchar(20);check:book_condition_after IN ('New', 'Good', 'Fair', 'Poor', 'Damaged')" json:"book_condition_after"`
+    PenaltyAmount       float64    `gorm:"type:decimal(10,2);default:0" json:"penalty_amount"`
+    User                User       `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"user"` // Relationship to User
+    Book                Book       `gorm:"foreignKey:BookID;constraint:OnDelete:CASCADE" json:"book"` // Relationship to Book
+    Reservation         Reservation `gorm:"foreignKey:ReservationID;constraint:OnDelete:CASCADE" json:"reservation"` // Relationship to Reservation
 }
+
+type BorrowedBookWithDetails struct {
+	ReservationID int      `json:"reservation_id"`
+	UserID        string    `json:"user_id"`
+	BookID        int      `json:"book_id"`
+	Title         string    `json:"title"`
+	Picture       string    `json:"picture"`      // <--- This matches the alias used in the SELECT
+	BorrowDate    time.Time `json:"borrow_date"`
+	DueDate       time.Time `json:"due_date"`
+}
+
+
+
 
 type Notification struct {
 	NotificationID uint      `gorm:"primaryKey;autoIncrement"`
@@ -83,4 +102,10 @@ type Notification struct {
 	CreatedAt      time.Time `gorm:"autoCreateTime"`
 	IsRead         bool      `gorm:"default:false"`
 	User           User      `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+}
+
+type Setting struct {
+	ID    uint   `gorm:"primaryKey" json:"id"`
+	Key   string `gorm:"uniqueIndex;not null" json:"key"`
+	Value string `gorm:"not null" json:"value"` // e.g., "2025-06-15"
 }

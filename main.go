@@ -5,7 +5,7 @@ import (
 	//"book_ease_go/controller"
 	"book_ease_go/middleware"
 	"book_ease_go/routes"
-
+	"book_ease_go/model"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -19,6 +19,15 @@ func init() {
 	} else {
 		fmt.Println("DB CONNECTION SUCCESSFUL!")
 	}
+	// 🔄 Run auto-migration for User model
+	middleware.DBConn.AutoMigrate(&model.User{})
+	middleware.DBConn.AutoMigrate(&model.Book{})
+	middleware.DBConn.AutoMigrate(&model.Reservation{})
+	middleware.DBConn.AutoMigrate(&model.BorrowedBook{})
+	middleware.DBConn.AutoMigrate(&model.Notification{})
+	middleware.DBConn.AutoMigrate(&model.Setting{})
+
+	
 }
 
 func main() {
@@ -26,26 +35,20 @@ func main() {
 		AppName: middleware.GetEnv("PROJ_NAME"),
 	})
 
-	// API ROUTES
-	// Sample Endpoint
-	// localhost:5566/check
-	//app.Get("/check", controller.SampleController)
-
-	// Do not remove this endpoint
-	app.Get("/favicon.ico", func(c *fiber.Ctx) error {
-		return c.SendStatus(204) // No Content
-	})
-
-	routes.AppRoutes(app)
-	// CORS CONFIG
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
-		AllowHeaders: "Origin, Content-Type, Accept",
+		AllowOrigins: "*", // Allow all origins (use specific origins in production)
+		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 	}))
+	
 
-	// LOGGER
+	// ✅ Define API Routes AFTER CORS
+	routes.AppRoutes(app)
+
+	// Enable logger middleware
 	app.Use(logger.New())
 
-	// Start Server
-	app.Listen(fmt.Sprintf(":%s", middleware.GetEnv("PROJ_PORT")))
+	// Start the server
+	app.Listen(fmt.Sprintf("0.0.0.0:%s", middleware.GetEnv("PROJ_PORT")))
+
 }
