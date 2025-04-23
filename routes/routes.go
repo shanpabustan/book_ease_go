@@ -49,8 +49,10 @@ func AppRoutes(app *fiber.App) {
 	admin.Get("/semester/end-date", controller.GetSemesterEndDate)
 	admin.Put("/semester/end-date", controller.UpdateSemesterEndDate)
 	admin.Post("/semester/auto-disable-students", controller.EndOfSemester)
-
+	admin.Post("/edit-admin", controller.EditAdminUser)
 	
+	app.Get("/test/run-notifs", controller.RunNotificationManually)
+	app.Get("/test/fetch-notifs", controller.FetchNotifications)
 	
 
 	

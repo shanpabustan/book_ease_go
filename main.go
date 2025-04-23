@@ -2,10 +2,13 @@ package main
 
 import (
 	"fmt"
-	//"book_ease_go/controller"
+	"os"
+	
 	"book_ease_go/middleware"
-	"book_ease_go/routes"
 	"book_ease_go/model"
+	"book_ease_go/notifications"
+	"book_ease_go/routes"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -47,6 +50,12 @@ func main() {
 
 	// Enable logger middleware
 	app.Use(logger.New())
+
+	// ✅ Conditionally start notification jobs
+	if os.Getenv("ENABLE_CRON_JOBS") == "true" {
+		fmt.Println("🔔 Starting cron jobs for notifications...")
+		notifications.RunNotificationJobs()
+	}
 
 	// Start the server
 	app.Listen(fmt.Sprintf("0.0.0.0:%s", middleware.GetEnv("PROJ_PORT")))

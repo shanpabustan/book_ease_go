@@ -334,21 +334,22 @@ func ReserveBook(c *fiber.Ctx) error {
         })
     }
 
-	// Clean up expired reservations
-	middleware.DBConn.
-	Where("status = ? AND expiry < ?", "Pending", time.Now()).
-	Delete(&model.Reservation{})
+    // Clean up expired reservations
+    middleware.DBConn.
+        Where("status = ? AND expiry < ?", "Pending", time.Now()).
+        Delete(&model.Reservation{})
+
     // Generate a unique ReservationID
     reservation.ReservationID = int(time.Now().UnixNano() % 10000)
     reservation.Status = "Pending"
     reservation.CreatedAt = time.Now()
 
-	reservation.Expiry = reservation.PreferredPickupDate.Add(24 * time.Hour)
+    reservation.Expiry = reservation.PreferredPickupDate.Add(24 * time.Hour)
 
-	// Optional: Set to expired if already expired on creation
-	if time.Now().After(reservation.Expiry) {
-		reservation.Status = "Expired"
-	}
+    // Optional: Set to expired if already expired on creation
+    if time.Now().After(reservation.Expiry) {
+        reservation.Status = "Expired"
+    }
 
     // Create the reservation
     if err := middleware.DBConn.Create(&reservation).Error; err != nil {
@@ -358,6 +359,28 @@ func ReserveBook(c *fiber.Ctx) error {
             Message: "Failed to create reservation",
             Data:    err.Error(),
         })
+    }
+
+    // Send a notification for the successful reservation (Pending)
+    user := model.User{}
+    if err := middleware.DBConn.First(&user, reservation.UserID).Error; err != nil {
+        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+            RetCode: "500",
+            Message: "Failed to fetch user for notification",
+            Data:    err.Error(),
+        })
+    }
+
+
+    notification := model.Notification{
+        UserID:    reservation.UserID,
+        Message:   "Your reservation for the book \"" + book.Title + "\" has been created and is pending approval.",
+        IsRead:    false,
+    }
+
+    // Send the notification to the user
+    if err := middleware.DBConn.Create(&notification).Error; err != nil {
+        fmt.Println("Error sending notification:", err)
     }
 
     return c.JSON(response.ResponseModel{

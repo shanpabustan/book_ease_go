@@ -4,13 +4,15 @@ import (
 	"book_ease_go/exports"
 	"book_ease_go/middleware"
 	"book_ease_go/model"
+	"book_ease_go/notifications"
 	response "book_ease_go/responses"
 	"fmt"
+	"log"
 	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	
+	"golang.org/x/crypto/bcrypt"
 )
 
 //Data Analytics
@@ -35,6 +37,59 @@ func CountStudents(c *fiber.Ctx) error {
 		RetCode: "200",
 		Message: "Student count fetched successfully",
 		Data:    count,
+	})
+}
+
+func EditAdminUser(c *fiber.Ctx) error {
+	var request struct {
+		UserID   string `json:"user_id"`
+		Password string `json:"password"`
+	}
+
+	// Parse JSON request body
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"RetCode": "400",
+			"Message": "Invalid request payload",
+			"Error":   err.Error(),
+		})
+	}
+
+	// Find user by ID, ensuring the user type is "Admin"
+	var user model.User
+	if err := middleware.DBConn.Table("users").Where("user_id = ? AND user_type = ?", request.UserID, "Admin").First(&user).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"RetCode": "404",
+			"Message": "Admin user not found",
+		})
+	}
+
+	// Hash the new password using bcrypt
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(request.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"RetCode": "500",
+			"Message": "Failed to hash the password",
+			"Error":   err.Error(),
+		})
+	}
+
+	// Update the admin user's password with the hashed version
+	user.Password = string(hashedPassword)
+
+	// Save changes
+	if err := middleware.DBConn.Table("users").Save(&user).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"RetCode": "500",
+			"Message": "Failed to update admin user",
+			"Error":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"RetCode": "200",
+		"Message": "Admin user password updated successfully",
+		"Data":    user,
 	})
 }
 
@@ -240,6 +295,7 @@ func DisableAllStudents(c *fiber.Ctx) error {
 }
 
 // Admin - Approve reservation and create borrowed book record (Picked Up remarks).
+// ApproveReservation function with notifications
 func ApproveReservation(c *fiber.Ctx) error {
     reservationIDStr := c.Params("reservation_id")
     reservationID, err := strconv.Atoi(reservationIDStr)
@@ -260,7 +316,6 @@ func ApproveReservation(c *fiber.Ctx) error {
         })
     }
 
-    // Check if the reservation is in "Pending" status
     if reservation.Status != "Pending" {
         return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
             RetCode: "400",
@@ -269,7 +324,6 @@ func ApproveReservation(c *fiber.Ctx) error {
         })
     }
 
-    // Start a transaction
     tx := middleware.DBConn.Begin()
     defer func() {
         if r := recover(); r != nil {
@@ -277,7 +331,6 @@ func ApproveReservation(c *fiber.Ctx) error {
         }
     }()
 
-    // Decrease available copies first
     var book model.Book
     if err := tx.First(&book, reservation.BookID).Error; err != nil {
         tx.Rollback()
@@ -288,7 +341,6 @@ func ApproveReservation(c *fiber.Ctx) error {
         })
     }
 
-    // Ensure the available copies are greater than 0 before approving the reservation
     if book.AvailableCopies <= 0 {
         tx.Rollback()
         return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
@@ -298,7 +350,6 @@ func ApproveReservation(c *fiber.Ctx) error {
         })
     }
 
-    // Decrease available copies and total copies if necessary
     book.AvailableCopies--
     if err := tx.Save(&book).Error; err != nil {
         tx.Rollback()
@@ -309,7 +360,6 @@ func ApproveReservation(c *fiber.Ctx) error {
         })
     }
 
-    // Approve reservation
     reservation.Status = "Approved"
     if err := tx.Save(&reservation).Error; err != nil {
         tx.Rollback()
@@ -320,13 +370,12 @@ func ApproveReservation(c *fiber.Ctx) error {
         })
     }
 
-    // Create borrowed book record
     borrowed := model.BorrowedBook{
         ReservationID:       reservation.ReservationID,
         UserID:              reservation.UserID,
         BookID:              reservation.BookID,
         BorrowDate:          time.Now(),
-        DueDate:             time.Now().AddDate(0, 0, 7), // Due in 7 days
+        DueDate:             time.Now().AddDate(0, 0, 7),
         Status:              "Approved",
         BookConditionBefore: book.BookCondition,
     }
@@ -340,7 +389,6 @@ func ApproveReservation(c *fiber.Ctx) error {
         })
     }
 
-    // Commit the transaction
     if err := tx.Commit().Error; err != nil {
         return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
             RetCode: "500",
@@ -349,6 +397,18 @@ func ApproveReservation(c *fiber.Ctx) error {
         })
     }
 
+    go func() {
+    err := notifications.SendNotificationTemplate("ReservationApproved", reservation.UserID, map[string]interface{}{
+        "BookTitle": book.Title,
+    })
+    if err != nil {
+		log.Printf("Notification error (approval): %v | UserID: %s | ReservationID: %d | Payload: %+v\n",
+			err, reservation.UserID, reservation.ReservationID, map[string]any{
+				"BookTitle": book.Title,
+			})
+    }
+}()
+
     return c.JSON(response.ResponseModel{
         RetCode: "200",
         Message: "Reservation approved and book borrowed successfully",
@@ -356,43 +416,54 @@ func ApproveReservation(c *fiber.Ctx) error {
     })
 }
 
-
-// Admin - Cancel reservation
+// DisapproveReservation function with notifications
 func DisapproveReservation(c *fiber.Ctx) error {
-	reservationID := c.Params("reservation_id")
+    reservationID := c.Params("reservation_id")
 
-	var reservation model.Reservation
-	if err := middleware.DBConn.First(&reservation, "reservation_id = ?", reservationID).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
-			RetCode: "404",
-			Message: "Reservation not found",
-			Data:    nil,
-		})
-	}
+    var reservation model.Reservation
+    if err := middleware.DBConn.First(&reservation, "reservation_id = ?", reservationID).Error; err != nil {
+        return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
+            RetCode: "404",
+            Message: "Reservation not found",
+            Data:    nil,
+        })
+    }
 
-	if reservation.Status != "Pending" {
-		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
-			RetCode: "400",
-			Message: "Only pending reservations can be disapproved",
-			Data:    nil,
-		})
-	}
+    if reservation.Status != "Pending" {
+        return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+            RetCode: "400",
+            Message: "Only pending reservations can be disapproved",
+            Data:    nil,
+        })
+    }
 
-	reservation.Status = "Cancelled"
-	if err := middleware.DBConn.Save(&reservation).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-			RetCode: "500",
-			Message: "Failed to disapprove reservation",
-			Data:    err.Error(),
-		})
-	}
+    reservation.Status = "Cancelled"
+    if err := middleware.DBConn.Save(&reservation).Error; err != nil {
+        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+            RetCode: "500",
+            Message: "Failed to disapprove reservation",
+            Data:    err.Error(),
+        })
+    }
 
-	return c.JSON(response.ResponseModel{
-		RetCode: "200",
-		Message: "Reservation disapproved successfully",
-		Data:    reservation,
-	})
+    var book model.Book
+    _ = middleware.DBConn.First(&book, reservation.BookID).Error
+
+    go func() {
+        if err := notifications.SendNotificationTemplate("ReservationDeclined", reservation.UserID, map[string]interface{}{
+            "BookTitle": book.Title,
+        }); err != nil {
+            log.Println("Notification error (decline):", err)
+        }
+    }()
+
+    return c.JSON(response.ResponseModel{
+        RetCode: "200",
+        Message: "Reservation disapproved successfully",
+        Data:    reservation,
+    })
 }
+
 
 
 func ReturnBook(c *fiber.Ctx) error {
@@ -798,7 +869,7 @@ func GetSemesterEndDate(c *fiber.Ctx) error {
 	})
 }
 
-// PUT /api/admin/semester-end
+
 func UpdateSemesterEndDate(c *fiber.Ctx) error {
 	type Request struct {
 		Value string `json:"value"` // Format: YYYY-MM-DD

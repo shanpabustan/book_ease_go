@@ -5,7 +5,6 @@ import (
 
 	
 )
-
 	type User struct {
 		UserID        string    `gorm:"primaryKey;size:20" json:"user_id"`
 		UserType      string    `gorm:"size:20;check:user_type IN ('Admin','Student')" json:"user_type"`
@@ -91,8 +90,6 @@ type BorrowedBookWithDetails struct {
 	BorrowDate    time.Time `json:"borrow_date"`
 	DueDate       time.Time `json:"due_date"`
 }
-
-
 
 
 type Notification struct {
