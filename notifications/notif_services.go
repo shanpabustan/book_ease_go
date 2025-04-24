@@ -47,7 +47,7 @@ func CheckOverdueBooks() {
 		for {
 			<-ticker.C
 			var borrowedBooks []model.BorrowedBook
-			if err := middleware.DBConn.Preload("Book").Where("status = ? AND due_date < ?", "Approved", time.Now()).Find(&borrowedBooks).Error; err != nil {
+			if err := middleware.DBConn.Preload("Book").Where("status = ? AND due_date < ?", "Overdue", time.Now()).Find(&borrowedBooks).Error; err != nil {
 				log.Println("Error fetching overdue books:", err)
 				continue
 			}
@@ -93,7 +93,7 @@ func CheckExpiredReservations() {
 		for {
 			<-ticker.C
 			var reservations []model.Reservation
-			if err := middleware.DBConn.Preload("Book").Where("status = ? AND expiry < ?", "Pending", time.Now()).Find(&reservations).Error; err != nil {
+			if err := middleware.DBConn.Preload("Book").Where("status = ? AND expiry < ?", "Expired", time.Now()).Find(&reservations).Error; err != nil {
 				log.Println("Error fetching expired reservations:", err)
 				continue
 			}

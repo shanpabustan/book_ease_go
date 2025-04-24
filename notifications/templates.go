@@ -9,8 +9,7 @@ var NotificationTemplates = map[string]*template.Template{
 	)),
 	"ReservationApproved": template.Must(template.New("ReservationApproved").Parse(
     `Your reservation for the book "{{.BookTitle}}" has been approved. Please pick it up by {{.PreferredPickupDate}}.`,
-)),
-
+	)),
 	"ReservationDeclined": template.Must(template.New("ReservationDeclined").Parse(
 		`We're sorry! Your reservation for the book "{{.BookTitle}}" has been declined. Please contact the librarian.`,
 	)),
