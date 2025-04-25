@@ -635,6 +635,98 @@ func GetAllReservations(c *fiber.Ctx) error {
 	return c.JSON(response)
 }
 
+func GetAllBorrowedBooks(c *fiber.Ctx) error {
+	type BorrowedBookResponse struct {
+		BorrowID            int        `json:"borrow_id"`
+		ReservationID       int        `json:"reservation_id"`
+		UserID              string     `json:"user_id"`
+		FullName            string     `json:"full_name"`
+		BookID              int        `json:"book_id"`
+		BookTitle           string     `json:"book_title"`
+		BorrowDate          time.Time  `json:"borrow_date"`
+		DueDate             time.Time  `json:"due_date"`
+		ReturnDate          *time.Time `json:"return_date,omitempty"`
+		Status              string     `json:"status"`
+		BookConditionBefore string     `json:"book_condition_before"`
+		BookConditionAfter  *string    `json:"book_condition_after,omitempty"`
+		PenaltyAmount       float64    `json:"penalty_amount"`
+	}
+
+	type borrowedBookRaw struct {
+		BorrowID            int
+		ReservationID       int
+		UserID              string
+		BookID              int
+		BorrowDate          time.Time
+		DueDate             time.Time
+		ReturnDate          *time.Time
+		Status              string
+		BookConditionBefore string
+		BookConditionAfter  *string
+		PenaltyAmount       float64
+		FirstName           string
+		MiddleName          *string
+		LastName            string
+		Suffix              *string
+		BookTitle           string
+	}
+
+	var rawData []borrowedBookRaw
+
+	query := `
+		SELECT 
+			bb.borrow_id,
+			bb.reservation_id,
+			bb.user_id,
+			bb.book_id,
+			bb.borrow_date,
+			bb.due_date,
+			bb.return_date,
+			bb.status,
+			bb.book_condition_before,
+			bb.book_condition_after,
+			bb.penalty_amount,
+			u.first_name,
+			u.middle_name,
+			u.last_name,
+			u.suffix,
+			b.title AS book_title
+		FROM borrowed_books bb
+		JOIN users u ON bb.user_id = u.user_id
+		JOIN books b ON bb.book_id = b.book_id
+		ORDER BY bb.borrow_date DESC
+	`
+
+	if err := middleware.DBConn.Raw(query).Scan(&rawData).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to fetch borrowed books",
+		})
+	}
+
+	var response []BorrowedBookResponse
+	for _, r := range rawData {
+		fullName := formatFullName(r.LastName, r.FirstName, r.MiddleName, r.Suffix)
+
+		response = append(response, BorrowedBookResponse{
+			BorrowID:            r.BorrowID,
+			ReservationID:       r.ReservationID,
+			UserID:              r.UserID,
+			FullName:            fullName,
+			BookID:              r.BookID,
+			BookTitle:           r.BookTitle,
+			BorrowDate:          r.BorrowDate,
+			DueDate:             r.DueDate,
+			ReturnDate:          r.ReturnDate,
+			Status:              r.Status,
+			BookConditionBefore: r.BookConditionBefore,
+			BookConditionAfter:  r.BookConditionAfter,
+			PenaltyAmount:       r.PenaltyAmount,
+		})
+	}
+
+	return c.JSON(response)
+}
+
 
 
 func formatFullName(lastName, firstName string, middleName, suffix *string) string {

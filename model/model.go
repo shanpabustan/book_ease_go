@@ -63,22 +63,23 @@ type Reservation struct {
 	User User `gorm:"foreignKey:UserID;references:UserID;constraint:OnDelete:CASCADE"`
 	Book Book `gorm:"foreignKey:BookID;references:BookID;constraint:OnDelete:CASCADE"`
 }
-
 type BorrowedBook struct {
-    BorrowID            int        `gorm:"primaryKey;column:borrow_id" json:"borrow_id"` // Primary key
-    ReservationID       int        `gorm:"not null" json:"reservation_id"`      // Foreign key from Reservation
-    UserID              string     `gorm:"size:20;not null" json:"user_id"`     // Foreign key from User
-    BookID              int        `gorm:"not null" json:"book_id"`              // Foreign key from Book
-    BorrowDate          time.Time  `gorm:"autoCreateTime" json:"borrow_date"`    // Timestamp when borrowed
-    DueDate             time.Time  `gorm:"not null" json:"due_date"`             // Due date for return
-    ReturnDate          *time.Time `json:"return_date,omitempty"`                 // Optional return date
+    BorrowID            int        `gorm:"primaryKey;column:borrow_id" json:"borrow_id"`
+    ReservationID       int        `gorm:"not null" json:"reservation_id"`
+    UserID              string     `gorm:"size:20;not null" json:"user_id"`
+    BookID              int        `gorm:"not null" json:"book_id"`
+    BorrowDate          time.Time  `gorm:"autoCreateTime" json:"borrow_date"`
+    DueDate             time.Time  `gorm:"not null" json:"due_date"`
+    ReturnDate          *time.Time `json:"return_date,omitempty"`
     Status              string     `gorm:"type:varchar(50);default:'Pending';check:status IN ('Pending', 'Approved', 'Returned', 'Overdue', 'Damaged')" json:"status"`
     BookConditionBefore string     `gorm:"type:varchar(20);check:book_condition_before IN ('New', 'Good', 'Fair', 'Poor')" json:"book_condition_before"`
     BookConditionAfter  *string    `gorm:"type:varchar(20);check:book_condition_after IN ('New', 'Good', 'Fair', 'Poor', 'Damaged')" json:"book_condition_after"`
     PenaltyAmount       float64    `gorm:"type:decimal(10,2);default:0" json:"penalty_amount"`
-    User                User       `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"user"` // Relationship to User
-    Book                Book       `gorm:"foreignKey:BookID;constraint:OnDelete:CASCADE" json:"book"` // Relationship to Book
-    Reservation         Reservation `gorm:"foreignKey:ReservationID;constraint:OnDelete:CASCADE" json:"reservation"` // Relationship to Reservation
+    
+    // Relationships
+    User                User        `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"user"`
+    Book                Book        `gorm:"foreignKey:BookID;constraint:OnDelete:CASCADE" json:"book"`
+    Reservation         Reservation `gorm:"foreignKey:ReservationID;constraint:OnDelete:CASCADE" json:"reservation"`
 }
 
 type BorrowedBookWithDetails struct {

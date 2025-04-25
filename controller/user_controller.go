@@ -3,7 +3,9 @@ package controller
 import (
 	"book_ease_go/middleware"
 	"book_ease_go/model"
+	"book_ease_go/notifications"
 	response "book_ease_go/responses"
+	"bytes"
 	"errors"
 	"fmt"
 
@@ -303,91 +305,80 @@ func UpdateAvatar(c *fiber.Ctx) error {
 
 
 func ReserveBook(c *fiber.Ctx) error {
-    var reservation model.Reservation
+	var reservation model.Reservation
 
-    // Ensure the request body is correctly parsed
-    if err := c.BodyParser(&reservation); err != nil {
-        return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
-            RetCode: "400",
-            Message: "Invalid request body",
-            Data:    err.Error(),
-        })
-    }
+	if err := c.BodyParser(&reservation); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Invalid request body",
+			Data:    err.Error(),
+		})
+	}
 
-    // Check if the book exists
-    var book model.Book
-    if err := middleware.DBConn.First(&book, reservation.BookID).Error; err != nil {
-        return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
-            RetCode: "404",
-            Message: "Book not found",
-            Data:    nil,
-        })
-    }
+	var book model.Book
+	if err := middleware.DBConn.First(&book, reservation.BookID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
+			RetCode: "404",
+			Message: "Book not found",
+			Data:    nil,
+		})
+	}
 
-    // Check if the user already has an active reservation for the same book
-    var existingReservation model.Reservation
-    if err := middleware.DBConn.Where("user_id = ? AND book_id = ? AND (status = 'Pending' OR status = 'Approved')", reservation.UserID, reservation.BookID).First(&existingReservation).Error; err == nil {
-        return c.Status(fiber.StatusConflict).JSON(response.ResponseModel{
-            RetCode: "409",
-            Message: "User already has an active reservation for this book",
-            Data:    nil,
-        })
-    }
+	var existingReservation model.Reservation
+	if err := middleware.DBConn.Where("user_id = ? AND book_id = ? AND (status = 'Pending' OR status = 'Approved')", reservation.UserID, reservation.BookID).First(&existingReservation).Error; err == nil {
+		return c.Status(fiber.StatusConflict).JSON(response.ResponseModel{
+			RetCode: "409",
+			Message: "User already has an active reservation for this book",
+			Data:    nil,
+		})
+	}
 
-    // Clean up expired reservations
-    middleware.DBConn.
-        Where("status = ? AND expiry < ?", "Pending", time.Now()).
-        Delete(&model.Reservation{})
+	middleware.DBConn.
+		Where("status = ? AND expiry < ?", "Pending", time.Now()).
+		Delete(&model.Reservation{})
 
-    // Generate a unique ReservationID
-    reservation.ReservationID = int(time.Now().UnixNano() % 10000)
-    reservation.Status = "Pending"
-    reservation.CreatedAt = time.Now()
+	reservation.ReservationID = int(time.Now().UnixNano() % 10000)
+	reservation.Status = "Pending"
+	reservation.CreatedAt = time.Now()
+	reservation.Expiry = reservation.PreferredPickupDate.Add(24 * time.Hour)
 
-    reservation.Expiry = reservation.PreferredPickupDate.Add(24 * time.Hour)
+	if time.Now().After(reservation.Expiry) {
+		reservation.Status = "Expired"
+	}
 
-    // Optional: Set to expired if already expired on creation
-    if time.Now().After(reservation.Expiry) {
-        reservation.Status = "Expired"
-    }
+	if err := middleware.DBConn.Create(&reservation).Error; err != nil {
+		fmt.Println("DB Create Error:", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to create reservation",
+			Data:    err.Error(),
+		})
+	}
 
-    // Create the reservation
-    if err := middleware.DBConn.Create(&reservation).Error; err != nil {
-        fmt.Println("DB Create Error:", err) // Log the error for debugging
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Failed to create reservation",
-            Data:    err.Error(),
-        })
-    }
+	// Generate notification message using template
+	var msgBuffer bytes.Buffer
+	err := notifications.NotificationTemplates["ReservationPending"].Execute(&msgBuffer, map[string]string{
+		"BookTitle": book.Title,
+	})
+	if err != nil {
+		fmt.Println("Template execution error:", err)
+	}
 
-    // Send a notification for the successful reservation (Pending)
-    user := model.User{}
-    if err := middleware.DBConn.First(&user, reservation.UserID).Error; err != nil {
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Failed to fetch user for notification",
-            Data:    err.Error(),
-        })
-    }
+	notification := model.Notification{
+		UserID:  reservation.UserID,
+		Message: msgBuffer.String(),
+		IsRead:  false,
+	}
 
+	if err := middleware.DBConn.Create(&notification).Error; err != nil {
+		fmt.Println("Error sending notification:", err)
+	}
 
-    notification := model.Notification{
-        UserID:    reservation.UserID,
-        Message:   "Your reservation for the book \"" + book.Title + "\" has been created and is pending approval.",
-        IsRead:    false,
-    }
-
-    // Send the notification to the user
-    if err := middleware.DBConn.Create(&notification).Error; err != nil {
-        fmt.Println("Error sending notification:", err)
-    }
-
-    return c.JSON(response.ResponseModel{
-        RetCode: "201",
-        Message: "Reservation successful. Pending approval.",
-        Data:    reservation,
-    })
+	return c.JSON(response.ResponseModel{
+		RetCode: "201",
+		Message: "Reservation successful. Pending approval.",
+		Data:    reservation,
+	})
 }
 
 
