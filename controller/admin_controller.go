@@ -184,6 +184,8 @@ func UpdateBook(c *fiber.Ctx) error {
 		AvailableCopies: book.AvailableCopies,
 		BookCondition:   book.BookCondition,
 		Picture:         book.Picture,
+		Version: 		book.Version,
+		Description:    book.Description,
 	}).Error; err != nil {
 		// Log and return the error
 		fmt.Printf("Error updating book: %v\n", err)
@@ -376,7 +378,7 @@ func ApproveReservation(c *fiber.Ctx) error {
         BookID:              reservation.BookID,
         BorrowDate:          time.Now(),
         DueDate:             time.Now().AddDate(0, 0, 7),
-        Status:              "Approved",
+        Status:              "Pending",
         BookConditionBefore: book.BookCondition,
     }
 

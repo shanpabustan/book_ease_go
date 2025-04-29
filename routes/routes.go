@@ -24,6 +24,7 @@ func AppRoutes(app *fiber.App) {
 	stud.Post("/add-pic", controller.UpdateAvatar)
 
 
+
 	//Reserve Book - Student
 	reserve := app.Group("/reserve")
 	reserve.Post("/reserve-book", controller.ReserveBook)

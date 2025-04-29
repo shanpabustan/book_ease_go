@@ -325,7 +325,7 @@ func ReserveBook(c *fiber.Ctx) error {
 	}
 
 	var existingReservation model.Reservation
-	if err := middleware.DBConn.Where("user_id = ? AND book_id = ? AND (status = 'Pending' OR status = 'Approved')", reservation.UserID, reservation.BookID).First(&existingReservation).Error; err == nil {
+	if err := middleware.DBConn.Where("user_id = ? AND book_id = ? AND (status = 'Pending')", reservation.UserID, reservation.BookID).First(&existingReservation).Error; err == nil {
 		return c.Status(fiber.StatusConflict).JSON(response.ResponseModel{
 			RetCode: "409",
 			Message: "User already has an active reservation for this book",
@@ -440,7 +440,7 @@ func FetchBorrowedBooks(c *fiber.Ctx) error {
 	err := middleware.DBConn.Table("borrowed_books").
 		Select("books.book_id, books.title, books.picture, books.available_copies AS copies, borrowed_books.due_date, books.author, books.year_published, books.isbn, books.shelf_location, books.library_section, books.description").
 		Joins("JOIN books ON books.book_id = borrowed_books.book_id").
-		Where("borrowed_books.user_id = ? AND borrowed_books.status = ?", userID, "Approved").
+		Where("borrowed_books.user_id = ? AND borrowed_books.status = ?", userID, "Pending").
 		Scan(&books).Error
 
 	if err != nil {
