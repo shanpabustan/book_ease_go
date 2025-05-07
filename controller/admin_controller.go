@@ -10,7 +10,6 @@ import (
 	"log"
 	"strconv"
 	"time"
-
 	"github.com/gofiber/fiber/v2"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -39,6 +38,80 @@ func CountStudents(c *fiber.Ctx) error {
 		Data:    count,
 	})
 }
+
+func CountBorrowedBooks(c *fiber.Ctx) error {
+	var count int64
+
+	// Count the number of borrowed books with status = "Pending"
+	if err := middleware.DBConn.Debug().
+		Table("borrowed_books").
+		Where("status = ?", "Pending").
+		Count(&count).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to count borrowed books",
+			Data:    err.Error(),
+		})
+	}
+
+	// Return the count of students
+	return c.JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "Borrowed Books fetched successfully",
+		Data:    count,
+	})
+}
+
+func CountReservations(c *fiber.Ctx) error {
+	var count int64
+
+	// Count the number of reservations with status = "Pending"
+	if err := middleware.DBConn.Debug().
+		Table("reservations").
+		Where("status = ?", "Pending").
+		Count(&count).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to count reservations",
+			Data:    err.Error(),
+		})
+	}
+
+	// Return the count of students
+	return c.JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "Reservations fetched successfully",
+		Data:    count,
+	})
+}
+
+func CountOverdueBooks(c *fiber.Ctx) error {
+	var count int64
+
+	// Count the number of reservations with status = "Pending"
+	if err := middleware.DBConn.Debug().
+		Table("borrowed_books").
+		Where("status = ?", "Overdue").
+		Count(&count).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to count overdue books",
+			Data:    err.Error(),
+		})
+	}
+
+	// Return the count of students
+	return c.JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "Overdue books fetched successfully",
+		Data:    count,
+	})
+}
+
+
+
+
+
 
 func EditAdminUser(c *fiber.Ctx) error {
 	var request struct {
@@ -122,6 +195,13 @@ func AddBook(c *fiber.Ctx) error {
 	// Auto-set AvailableCopies to match TotalCopies
 	book.AvailableCopies = book.TotalCopies
 
+	if book.BookCondition != "New" && book.BookCondition != "Used" {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Invalid book condition. Must be 'New' or 'Used'.",
+		})
+	}
+	
 	// Save to DB
 	if err := middleware.DBConn.Create(&book).Error; err != nil {
 		fmt.Println("Error inserting book:", err)
@@ -138,7 +218,6 @@ func AddBook(c *fiber.Ctx) error {
 		Data:    book,
 	})
 }
-
 
 
 // Update Details of the book
@@ -509,7 +588,7 @@ func ReturnBook(c *fiber.Ctx) error {
         })
     }
 
-    if borrowed.Status == "Returned" || borrowed.Status == "Overdue" {
+    if borrowed.Status == "Returned"  {
         tx.Rollback()
         return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
             RetCode: "400",
@@ -517,6 +596,8 @@ func ReturnBook(c *fiber.Ctx) error {
             Data:    nil,
         })
     }
+
+	
 
     var book model.Book
     if err := tx.First(&book, borrowed.BookID).Error; err != nil {
@@ -544,11 +625,7 @@ func ReturnBook(c *fiber.Ctx) error {
     borrowed.ReturnDate = &now
 
     // Determine return status
-    if now.After(borrowed.DueDate) {
-        borrowed.Status = "Overdue"
-    } else {
-        borrowed.Status = "Returned"
-    }
+    borrowed.Status = "Returned"
 
     // Set BookConditionAfter and PenaltyAmount from request
     if reqData.BookConditionAfter != "" {
@@ -602,7 +679,7 @@ func GetAllReservations(c *fiber.Ctx) error {
 
 	// Ensure preloads are valid: User.UserID is string
 	err := middleware.DBConn.
-		Preload("User").
+		Preload("User"). 
 		Preload("Book").
 		Find(&reservations).Error
 
@@ -1058,6 +1135,50 @@ func EndOfSemester(c *fiber.Ctx) error {
 		Data:    nil,
 	})
 }
+
+func UnblockUser(c *fiber.Ctx) error {
+	userID := c.Params("userID")
+
+	// Find the user by userID
+	var user model.User
+	if err := middleware.DBConn.First(&user, "user_id = ?", userID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"RetCode": 404,
+			"Message": "User not found",
+			"Data":    nil,
+		})
+	}
+
+	// Check if the user is already active
+	if user.IsActive {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"RetCode": 400,
+			"Message": "User is already active",
+			"Data":    nil,
+		})
+	}
+
+	// Unblock the user by setting IsActive to true
+	user.IsActive = true
+	if err := middleware.DBConn.Save(&user).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"RetCode": 500,
+			"Message": "Failed to unblock user",
+			"Data":    nil,
+		})
+	}
+
+	// Success response
+	return c.JSON(fiber.Map{
+		"RetCode": 200,
+		"Message": "User unblocked successfully",
+		"Data": fiber.Map{
+			"user_id":  user.UserID,
+			"is_active": user.IsActive,
+		},
+	})
+}
+
 
 
 

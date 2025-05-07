@@ -51,6 +51,8 @@ func main() {
 	// Enable logger middleware
 	app.Use(logger.New())
 
+	middleware.StartOverdueScheduler()
+
 	// ✅ Conditionally start notification jobs
 	if os.Getenv("ENABLE_CRON_JOBS") == "true" {
 		fmt.Println("🔔 Starting cron jobs for notifications...")

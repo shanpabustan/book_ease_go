@@ -1,4 +1,3 @@
-// notifications/service.go
 package notifications
 
 import (
@@ -8,7 +7,7 @@ import (
 	"book_ease_go/model"
 )
 
-// SendNotificationTemplate dynamically renders a message based on category and model-based data
+// SendNotificationTemplate sends a notification only if it hasn’t already been sent
 func SendNotificationTemplate(category string, userID string, data map[string]interface{}) error {
 	tmpl, exists := NotificationTemplates[category]
 	if !exists {
@@ -20,10 +19,20 @@ func SendNotificationTemplate(category string, userID string, data map[string]in
 		return err
 	}
 
-	notification := model.Notification{
-		UserID:  userID,
-		Message: msg.String(),
+	message := msg.String()
+
+	// Check if the same notification message already exists for this user
+	var existing model.Notification
+	err := middleware.DBConn.Where("user_id = ? AND message = ?", userID, message).First(&existing).Error
+	if err == nil {
+		// Notification already exists
+		return nil
 	}
 
+	// Send notification
+	notification := model.Notification{
+		UserID:  userID,
+		Message: message,
+	}
 	return middleware.DBConn.Create(&notification).Error
 }

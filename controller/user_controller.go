@@ -8,72 +8,72 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
 // Register User
 func CreateStudent(c *fiber.Ctx) error {
-	var student model.User
+	var students []model.User
 
-	// Parse JSON body
-	if err := c.BodyParser(&student); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"RetCode": "400",
-			"Message": "Invalid request data",
-			"Error":   err.Error(),
-		})
+	// First try: parse as array
+	if err := c.BodyParser(&students); err != nil {
+		// Second try: parse as single user
+		var single model.User	
+		if err := c.BodyParser(&single); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"RetCode": "400",
+				"Message": "Invalid request data",
+				"Error":   err.Error(),
+			})
+		}
+		students = append(students, single)
 	}
 
-	// ✅ Check if user_id already exists
-	var existingUser model.User
-	err := middleware.DBConn.Table("users").Where("user_id = ?", student.UserID).First(&existingUser).Error
+	for i := range students {
+		// Force user_type and default avatar path
+		students[i].UserType = "Student"
+		students[i].AvatarPath = ""
 
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		fmt.Println("DB Query Error:", err)
+		// Check for duplicate user_id
+		var existing model.User
+		err := middleware.DBConn.Table("users").Where("user_id = ?", students[i].UserID).First(&existing).Error
+		if err == nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"RetCode": "400",
+				"Message": fmt.Sprintf("User ID already exists: %s", students[i].UserID),
+			})
+		} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"RetCode": "500",
+				"Message": "Database error",
+				"Error":   err.Error(),
+			})
+		}
+
+		// Hash the password
+		hashed, err := bcrypt.GenerateFromPassword([]byte(students[i].Password), bcrypt.DefaultCost)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"RetCode": "500",
+				"Message": "Failed to hash password",
+				"Error":   err.Error(),
+			})
+		}
+		students[i].Password = string(hashed)
+	}
+
+	// Insert users
+	if err := middleware.DBConn.Table("users").Create(&students).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"RetCode": "500",
-			"Message": "Database Error",
-			"Error":   err.Error(),
-		})
-	}
-
-	// If user exists, return error
-	if err == nil {
-		fmt.Println("User already exists:", student.UserID)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"RetCode": "400",
-			"Message": "User already exists",
-		})
-	}
-
-	// ✅ Force user_type to "Student"
-	student.UserType = "Student"
-	student.AvatarPath = ""
-
-	// ✅ Hash the password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(student.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"RetCode": "500",
-			"Message": "Failed to hash password",
-			"Error":   err.Error(),
-		})
-	}
-	
-	student.Password = string(hashedPassword)
-
-
-	// ✅ Insert new user
-	if err := middleware.DBConn.Table("users").Create(&student).Error; err != nil {
-		fmt.Println("DB Insert Error:", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"RetCode": "500",
-			"Message": "Failed to Create User",
+			"Message": "Failed to create user(s)",
 			"Error":   err.Error(),
 		})
 	}
@@ -81,8 +81,23 @@ func CreateStudent(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"RetCode": "201",
 		"Message": "Registration Successful",
-		"Data":    student,
+		"Data":    students,
 	})
+}
+
+
+// Secret key for signing JWT tokens (consider storing it securely, like in an environment variable)
+var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
+
+// GenerateJWT generates a JWT token for the user
+func GenerateJWT(userID string, userType string) (string, error) {
+	claims := jwt.MapClaims{
+		"user_id":  userID,
+		"user_type": userType,
+		"exp":      time.Now().Add(24 * time.Hour).Unix(), // Token expiration time (24 hours)
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jwtSecret)
 }
 
 func LoginUser(c *fiber.Ctx) error {
@@ -111,6 +126,13 @@ func LoginUser(c *fiber.Ctx) error {
 		})
 	}
 
+	if !users.IsActive {
+		return c.Status(fiber.StatusForbidden).JSON(response.ResponseModel{
+			RetCode: "403",
+			Message: "The account is blocked. Please contact the administrator.",
+		})
+	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(users.Password), []byte(input.Password)); err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(response.ResponseModel{
 			RetCode: "401",
@@ -136,16 +158,16 @@ func LoginUser(c *fiber.Ctx) error {
 
 	var borrowedBooksWithDetails []model.BorrowedBookWithDetails
 	if err := middleware.DBConn.Table("borrowed_books").
-	Select(`borrowed_books.reservation_id, 
-	        borrowed_books.user_id, 
-	        borrowed_books.book_id, 
-	        books.title, 
-	        books.picture, 
-	        borrowed_books.borrow_date, 
-	        borrowed_books.due_date`).
-	Joins("JOIN books ON borrowed_books.book_id = books.book_id").
-	Where("borrowed_books.user_id = ? AND borrowed_books.status = ?", users.UserID, "Approved").
-	Scan(&borrowedBooksWithDetails).Error; err != nil {
+		Select(`borrowed_books.reservation_id, 
+		        borrowed_books.user_id, 
+		        borrowed_books.book_id, 
+		        books.title, 
+		        books.picture, 
+		        borrowed_books.borrow_date, 
+		        borrowed_books.due_date`).
+		Joins("JOIN books ON borrowed_books.book_id = books.book_id").
+		Where("borrowed_books.user_id = ? AND borrowed_books.status = ?", users.UserID, "Approved").
+		Scan(&borrowedBooksWithDetails).Error; err != nil {
 
 		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
 			RetCode: "500",
@@ -154,21 +176,28 @@ func LoginUser(c *fiber.Ctx) error {
 		})
 	}
 
-	// Ensure borrowedBooksWithDetails is at least an empty slice
 	if borrowedBooksWithDetails == nil {
 		borrowedBooksWithDetails = []model.BorrowedBookWithDetails{}
 	}
 
-		// ✅ Set login cookie
-		c.Cookie(&fiber.Cookie{
-			Name:     "user_session",
-			Value:    users.UserID,
-			Expires:  time.Now().Add(24 * time.Hour),
-			HTTPOnly: true,
-			Secure:   false, // set to true if using HTTPS
-			SameSite: "Lax",
+	// ✅ Generate JWT
+	token, err := GenerateJWT(users.UserID, users.UserType)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Error generating token",
 		})
+	}
 
+	// ✅ Set JWT in cookie
+	c.Cookie(&fiber.Cookie{
+		Name:     "jwt",
+		Value:    token,
+		Expires:  time.Now().Add(24 * time.Hour),
+		HTTPOnly: true,
+		Secure:   false, // Change to true if using HTTPS
+		SameSite: "Lax",
+	})
 
 	return c.JSON(response.ResponseModel{
 		RetCode: "200",
@@ -196,21 +225,22 @@ func LoginUser(c *fiber.Ctx) error {
 	})
 }
 
+
 func LogOutUser(c *fiber.Ctx) error {
-	// Invalidate the cookie by setting MaxAge to -1
+	// Invalidate the "jwt" cookie to log the user out
 	c.Cookie(&fiber.Cookie{
-		Name:     "user_session",
+		Name:     "jwt", // ✅ Match the name set in login
 		Value:    "",
 		MaxAge:   -1,
 		HTTPOnly: true,
-		Secure:   false, // match your login config (true if HTTPS)
+		Secure:   false,
 		SameSite: "Lax",
 	})
 
 	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
 		RetCode: "200",
 		Message: "Logout successful",
-	})
+	})	
 }
 
 
@@ -323,6 +353,14 @@ func ReserveBook(c *fiber.Ctx) error {
 			Data:    nil,
 		})
 	}
+	
+	if book.AvailableCopies <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Cannot reserve. No available copies at the moment.",
+			Data:    nil,
+		})
+	}
 
 	var existingReservation model.Reservation
 	if err := middleware.DBConn.Where("user_id = ? AND book_id = ? AND (status = 'Pending')", reservation.UserID, reservation.BookID).First(&existingReservation).Error; err == nil {
@@ -332,6 +370,7 @@ func ReserveBook(c *fiber.Ctx) error {
 			Data:    nil,
 		})
 	}
+
 
 	middleware.DBConn.
 		Where("status = ? AND expiry < ?", "Pending", time.Now()).

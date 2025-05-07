@@ -5,7 +5,8 @@ import (
 
 	
 )
-	type User struct {
+type User struct {
+	
 		UserID        string    `gorm:"primaryKey;size:20" json:"user_id"`
 		UserType      string    `gorm:"size:20;check:user_type IN ('Admin','Student')" json:"user_type"`
 		LastName      string    `gorm:"size:255;not null" json:"last_name"`
@@ -13,19 +14,19 @@ import (
 		MiddleName    *string   `gorm:"size:255" json:"middle_name,omitempty"`
 		Suffix        *string   `gorm:"size:4" json:"suffix,omitempty"`
 		Email         string    `gorm:"size:255;unique;not null" json:"email"`
-		Password  string    `gorm:"type:text;not null" json:"password"`
+		Password  	   string    `gorm:"type:text;not null" json:"password"`
 		Program       *string   `gorm:"size:50" json:"program,omitempty"`
 		YearLevel     *string   `gorm:"size:20" json:"year_level,omitempty"`
 		ContactNumber *string   `gorm:"size:20" json:"contact_number,omitempty"`
 		AvatarPath    string    `gorm:"size:255" json:"avatar_path"`
-		IsActive bool `gorm:"default:true" json:"is_active"`
+		IsActive 		bool    `gorm:"default:true" json:"is_active"`
 		CreatedAt     time.Time `gorm:"autoCreateTime" json:"created_at"`
 
 		// Relationships
 		Reservations   []Reservation   `gorm:"foreignKey:UserID"`
 		BorrowedBooks  []BorrowedBook  `gorm:"foreignKey:UserID"`
 		Notifications  []Notification  `gorm:"foreignKey:UserID"`
-	}
+}
 
 
 
@@ -63,6 +64,7 @@ type Reservation struct {
 	User User `gorm:"foreignKey:UserID;references:UserID;constraint:OnDelete:CASCADE"`
 	Book Book `gorm:"foreignKey:BookID;references:BookID;constraint:OnDelete:CASCADE"`
 }
+
 type BorrowedBook struct {
     BorrowID            int        `gorm:"primaryKey;column:borrow_id" json:"borrow_id"`
     ReservationID       int        `gorm:"not null" json:"reservation_id"`
@@ -72,7 +74,7 @@ type BorrowedBook struct {
     DueDate             time.Time  `gorm:"not null" json:"due_date"`
     ReturnDate          *time.Time `json:"return_date,omitempty"`
     Status              string     `gorm:"type:varchar(50);default:'Pending';check:status IN ('Pending', 'Approved', 'Returned', 'Overdue', 'Damaged')" json:"status"`
-    BookConditionBefore string     `gorm:"type:varchar(20);check:book_condition_before IN ('New', 'Good', 'Fair', 'Poor')" json:"book_condition_before"`
+    BookConditionBefore string     `gorm:"type:varchar(20);check:book_condition_before IN ('New', 'Good', 'Fair', 'Poor', 'Used')" json:"book_condition_before"`
     BookConditionAfter  *string    `gorm:"type:varchar(20);check:book_condition_after IN ('New', 'Good', 'Fair', 'Poor', 'Damaged')" json:"book_condition_after"`
     PenaltyAmount       float64    `gorm:"type:decimal(10,2);default:0" json:"penalty_amount"`
     
@@ -100,6 +102,12 @@ type Notification struct {
 	CreatedAt      time.Time `gorm:"autoCreateTime"`
 	IsRead         bool      `gorm:"default:false"`
 	User           User      `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+}
+
+type NotificationData struct {
+    BookTitle            string `json:"title"`
+    DueDate              string `json:"due_date,omitempty"`
+    PreferredPickupDate string `json:"preferred_pickup_date,omitempty"`
 }
 
 type Setting struct {
