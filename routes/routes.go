@@ -24,6 +24,7 @@ func AppRoutes(app *fiber.App) {
 	stud.Post("/add-pic", controller.UpdateAvatar)
 
 
+
 	//Reserve Book - Student
 	reserve := app.Group("/reserve")
 	reserve.Post("/reserve-book", controller.ReserveBook)
@@ -38,21 +39,29 @@ func AppRoutes(app *fiber.App) {
 	admin.Put("/edit-book/:book_id", controller.UpdateBook)
 	admin.Get("/get-users", controller.GetUsers)
 	admin.Get("/count", controller.CountStudents)
+	admin.Get("/count-borrowed-books", controller.CountBorrowedBooks)
+	admin.Get("/count-reservations", controller.CountReservations)
+	admin.Get("/count-overdue-books", controller.CountOverdueBooks)
 	admin.Put("/disable-students", controller.DisableAllStudents)
 	admin.Put("/approve-reservation/:reservation_id", controller.ApproveReservation)
 	admin.Put("/cancel-reservation/:reservation_id", controller.DisapproveReservation)
-	admin.Put("/return-book/:borrowed_id", controller.ReturnBook)
+	admin.Put("/return-book/:borrowed_id", controller.ReturnBook)	
 	admin.Get("/get-reservations", controller.GetAllReservations)
-	admin.Get("/check-penalty/:userID", controller.CheckAndBlockUser)
+	//admin.Get("/check-penalty/:userID", controller.)
 	admin.Get("/export-books", controller.ExportBooks)
 	admin.Get("/export-users", controller.ExportUsers)
 	admin.Get("/semester/end-date", controller.GetSemesterEndDate)
 	admin.Put("/semester/end-date", controller.UpdateSemesterEndDate)
 	admin.Post("/semester/auto-disable-students", controller.EndOfSemester)
 	admin.Post("/edit-admin", controller.EditAdminUser)
+	admin.Get("/get-borrowed-books", controller.GetAllBorrowedBooks)
+	admin.Put("/unblock-student/:userID", controller.UnblockUser)
+
 	
-	app.Get("/test/run-notifs", controller.RunNotificationManually)
 	app.Get("/test/fetch-notifs", controller.FetchNotifications)
+	app.Get("/notifications/unread", controller.FetchUnreadNotifications)
+	app.Put("/notifications/mark-as-read/:notification_id", controller.MarkNotificationAsRead)
+
 	
 
 	

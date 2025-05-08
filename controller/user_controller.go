@@ -3,84 +3,108 @@ package controller
 import (
 	"book_ease_go/middleware"
 	"book_ease_go/model"
+	"book_ease_go/notifications"
 	response "book_ease_go/responses"
+	
 	"errors"
 	"fmt"
+	"os"
 
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
 // Register User
 func CreateStudent(c *fiber.Ctx) error {
-	var student model.User
+	var students []model.User
 
-	// Parse JSON body
-	if err := c.BodyParser(&student); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"RetCode": "400",
-			"Message": "Invalid request data",
-			"Error":   err.Error(),
-		})
+	// First try: parse as array
+	if err := c.BodyParser(&students); err != nil {
+		// Second try: parse as single user
+		var single model.User	
+		if err := c.BodyParser(&single); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"RetCode": "400",
+				"Message": "Invalid request data",
+				"Error":   err.Error(),
+			})
+		}
+		students = append(students, single)
 	}
 
-	// ✅ Check if user_id already exists
-	var existingUser model.User
-	err := middleware.DBConn.Table("users").Where("user_id = ?", student.UserID).First(&existingUser).Error
+	for i := range students {
+		// Force user_type and default avatar path
+		students[i].UserType = "Student"
+		students[i].AvatarPath = ""
 
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		fmt.Println("DB Query Error:", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"RetCode": "500",
-			"Message": "Database Error",
-			"Error":   err.Error(),
-		})
+		// Check for duplicate user_id
+		var existing model.User
+		err := middleware.DBConn.Table("users").Where("user_id = ?", students[i].UserID).First(&existing).Error
+		if err == nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"RetCode": "400",
+				"Message": fmt.Sprintf("User ID already exists: %s", students[i].UserID),
+			})
+		} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"RetCode": "500",
+				"Message": "Database error",
+				"Error":   err.Error(),
+			})
+		}
+
+		// Hash the password
+		hashed, err := bcrypt.GenerateFromPassword([]byte(students[i].Password), bcrypt.DefaultCost)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"RetCode": "500",
+				"Message": "Failed to hash password",
+				"Error":   err.Error(),
+			})
+		}
+		students[i].Password = string(hashed)
 	}
 
-	// If user exists, return error
-	if err == nil {
-		fmt.Println("User already exists:", student.UserID)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"RetCode": "400",
-			"Message": "User already exists",
-		})
-	}
-
-	// ✅ Force user_type to "Student"
-	student.UserType = "Student"
-	student.AvatarPath = ""
-
-	// ✅ Hash the password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(student.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"RetCode": "500",
-			"Message": "Failed to hash password",
-			"Error":   err.Error(),
-		})
-	}
 	
-	student.Password = string(hashedPassword)
-
-
-	// ✅ Insert new user
-	if err := middleware.DBConn.Table("users").Create(&student).Error; err != nil {
-		fmt.Println("DB Insert Error:", err)
+	// Insert users
+	if err := middleware.DBConn.Table("users").Create(&students).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"RetCode": "500",
-			"Message": "Failed to Create User",
+			"Message": "Failed to create user(s)",
 			"Error":   err.Error(),
 		})
+	}
+
+	for _, user := range students {
+		go func(u model.User) {
+			notifications.NotifyAdminNewUser(middleware.DBConn, u)
+		}(user)
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"RetCode": "201",
 		"Message": "Registration Successful",
-		"Data":    student,
+		"Data":    students,
 	})
+}
+
+
+// Secret key for signing JWT tokens (consider storing it securely, like in an environment variable)
+var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
+
+// GenerateJWT generates a JWT token for the user
+func GenerateJWT(userID string, userType string) (string, error) {
+	claims := jwt.MapClaims{
+		"user_id":  userID,
+		"user_type": userType,
+		"exp":      time.Now().Add(24 * time.Hour).Unix(), // Token expiration time (24 hours)
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jwtSecret)
 }
 
 func LoginUser(c *fiber.Ctx) error {
@@ -109,6 +133,13 @@ func LoginUser(c *fiber.Ctx) error {
 		})
 	}
 
+	if !users.IsActive {
+		return c.Status(fiber.StatusForbidden).JSON(response.ResponseModel{
+			RetCode: "403",
+			Message: "The account is blocked. Please contact the administrator.",
+		})
+	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(users.Password), []byte(input.Password)); err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(response.ResponseModel{
 			RetCode: "401",
@@ -134,16 +165,16 @@ func LoginUser(c *fiber.Ctx) error {
 
 	var borrowedBooksWithDetails []model.BorrowedBookWithDetails
 	if err := middleware.DBConn.Table("borrowed_books").
-	Select(`borrowed_books.reservation_id, 
-	        borrowed_books.user_id, 
-	        borrowed_books.book_id, 
-	        books.title, 
-	        books.picture, 
-	        borrowed_books.borrow_date, 
-	        borrowed_books.due_date`).
-	Joins("JOIN books ON borrowed_books.book_id = books.book_id").
-	Where("borrowed_books.user_id = ? AND borrowed_books.status = ?", users.UserID, "Approved").
-	Scan(&borrowedBooksWithDetails).Error; err != nil {
+		Select(`borrowed_books.reservation_id, 
+		        borrowed_books.user_id, 
+		        borrowed_books.book_id, 
+		        books.title, 
+		        books.picture, 
+		        borrowed_books.borrow_date, 
+		        borrowed_books.due_date`).
+		Joins("JOIN books ON borrowed_books.book_id = books.book_id").
+		Where("borrowed_books.user_id = ? AND borrowed_books.status = ?", users.UserID, "Approved").
+		Scan(&borrowedBooksWithDetails).Error; err != nil {
 
 		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
 			RetCode: "500",
@@ -152,21 +183,28 @@ func LoginUser(c *fiber.Ctx) error {
 		})
 	}
 
-	// Ensure borrowedBooksWithDetails is at least an empty slice
 	if borrowedBooksWithDetails == nil {
 		borrowedBooksWithDetails = []model.BorrowedBookWithDetails{}
 	}
 
-		// ✅ Set login cookie
-		c.Cookie(&fiber.Cookie{
-			Name:     "user_session",
-			Value:    users.UserID,
-			Expires:  time.Now().Add(24 * time.Hour),
-			HTTPOnly: true,
-			Secure:   false, // set to true if using HTTPS
-			SameSite: "Lax",
+	// ✅ Generate JWT
+	token, err := GenerateJWT(users.UserID, users.UserType)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Error generating token",
 		})
+	}
 
+	// ✅ Set JWT in cookie
+	c.Cookie(&fiber.Cookie{
+		Name:     "jwt",
+		Value:    token,
+		Expires:  time.Now().Add(24 * time.Hour),
+		HTTPOnly: true,
+		Secure:   false, // Change to true if using HTTPS
+		SameSite: "Lax",
+	})
 
 	return c.JSON(response.ResponseModel{
 		RetCode: "200",
@@ -194,21 +232,22 @@ func LoginUser(c *fiber.Ctx) error {
 	})
 }
 
+
 func LogOutUser(c *fiber.Ctx) error {
-	// Invalidate the cookie by setting MaxAge to -1
+	// Invalidate the "jwt" cookie to log the user out
 	c.Cookie(&fiber.Cookie{
-		Name:     "user_session",
+		Name:     "jwt", // ✅ Match the name set in login
 		Value:    "",
 		MaxAge:   -1,
 		HTTPOnly: true,
-		Secure:   false, // match your login config (true if HTTPS)
+		Secure:   false,
 		SameSite: "Lax",
 	})
 
 	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
 		RetCode: "200",
 		Message: "Logout successful",
-	})
+	})	
 }
 
 
@@ -303,91 +342,81 @@ func UpdateAvatar(c *fiber.Ctx) error {
 
 
 func ReserveBook(c *fiber.Ctx) error {
-    var reservation model.Reservation
+	var reservation model.Reservation
 
-    // Ensure the request body is correctly parsed
-    if err := c.BodyParser(&reservation); err != nil {
-        return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
-            RetCode: "400",
-            Message: "Invalid request body",
-            Data:    err.Error(),
-        })
-    }
+	if err := c.BodyParser(&reservation); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Invalid request body",
+			Data:    err.Error(),
+		})
+	}
 
-    // Check if the book exists
-    var book model.Book
-    if err := middleware.DBConn.First(&book, reservation.BookID).Error; err != nil {
-        return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
-            RetCode: "404",
-            Message: "Book not found",
-            Data:    nil,
-        })
-    }
+	var book model.Book
+	if err := middleware.DBConn.First(&book, reservation.BookID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
+			RetCode: "404",
+			Message: "Book not found",
+			Data:    nil,
+		})
+	}
+	
+	if book.AvailableCopies <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Cannot reserve. No available copies at the moment.",
+			Data:    nil,
+		})
+	}
 
-    // Check if the user already has an active reservation for the same book
-    var existingReservation model.Reservation
-    if err := middleware.DBConn.Where("user_id = ? AND book_id = ? AND (status = 'Pending' OR status = 'Approved')", reservation.UserID, reservation.BookID).First(&existingReservation).Error; err == nil {
-        return c.Status(fiber.StatusConflict).JSON(response.ResponseModel{
-            RetCode: "409",
-            Message: "User already has an active reservation for this book",
-            Data:    nil,
-        })
-    }
-
-    // Clean up expired reservations
-    middleware.DBConn.
-        Where("status = ? AND expiry < ?", "Pending", time.Now()).
-        Delete(&model.Reservation{})
-
-    // Generate a unique ReservationID
-    reservation.ReservationID = int(time.Now().UnixNano() % 10000)
-    reservation.Status = "Pending"
-    reservation.CreatedAt = time.Now()
-
-    reservation.Expiry = reservation.PreferredPickupDate.Add(24 * time.Hour)
-
-    // Optional: Set to expired if already expired on creation
-    if time.Now().After(reservation.Expiry) {
-        reservation.Status = "Expired"
-    }
-
-    // Create the reservation
-    if err := middleware.DBConn.Create(&reservation).Error; err != nil {
-        fmt.Println("DB Create Error:", err) // Log the error for debugging
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Failed to create reservation",
-            Data:    err.Error(),
-        })
-    }
-
-    // Send a notification for the successful reservation (Pending)
-    user := model.User{}
-    if err := middleware.DBConn.First(&user, reservation.UserID).Error; err != nil {
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Failed to fetch user for notification",
-            Data:    err.Error(),
-        })
-    }
+	var existingReservation model.Reservation
+	if err := middleware.DBConn.Where("user_id = ? AND book_id = ? AND (status = 'Pending')", reservation.UserID, reservation.BookID).First(&existingReservation).Error; err == nil {
+		return c.Status(fiber.StatusConflict).JSON(response.ResponseModel{
+			RetCode: "409",
+			Message: "User already has an active reservation for this book",
+			Data:    nil,
+		})
+	}
 
 
-    notification := model.Notification{
-        UserID:    reservation.UserID,
-        Message:   "Your reservation for the book \"" + book.Title + "\" has been created and is pending approval.",
-        IsRead:    false,
-    }
+	middleware.DBConn.
+		Where("status = ? AND expiry < ?", "Pending", time.Now()).
+		Delete(&model.Reservation{})
 
-    // Send the notification to the user
-    if err := middleware.DBConn.Create(&notification).Error; err != nil {
-        fmt.Println("Error sending notification:", err)
-    }
+	reservation.ReservationID = int(time.Now().UnixNano() % 10000)
+	reservation.Status = "Pending"
+	reservation.CreatedAt = time.Now()
+	reservation.Expiry = reservation.PreferredPickupDate.Add(24 * time.Hour)
 
-    return c.JSON(response.ResponseModel{
-        RetCode: "201",
-        Message: "Reservation successful. Pending approval.",
-        Data:    reservation,
-    })
+	if time.Now().After(reservation.Expiry) {
+		reservation.Status = "Expired"
+	}
+
+	if err := middleware.DBConn.Create(&reservation).Error; err != nil {
+		fmt.Println("DB Create Error:", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to create reservation",
+			Data:    err.Error(),
+		})
+	}
+
+	var user model.User
+	if err := middleware.DBConn.Table("users").Where("user_id = ?", reservation.UserID).First(&user).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to fetch user details",
+			Data:    err.Error(),
+		})
+	}
+
+	notifications.NotifyPendingReservation(middleware.DBConn, user, book)
+
+	return c.JSON(response.ResponseModel{
+		RetCode: "201",
+		Message: "Reservation successful. Pending approval.",
+		Data:    reservation,
+	})
 }
 
 
@@ -449,7 +478,7 @@ func FetchBorrowedBooks(c *fiber.Ctx) error {
 	err := middleware.DBConn.Table("borrowed_books").
 		Select("books.book_id, books.title, books.picture, books.available_copies AS copies, borrowed_books.due_date, books.author, books.year_published, books.isbn, books.shelf_location, books.library_section, books.description").
 		Joins("JOIN books ON books.book_id = borrowed_books.book_id").
-		Where("borrowed_books.user_id = ? AND borrowed_books.status = ?", userID, "Approved").
+		Where("borrowed_books.user_id = ? AND borrowed_books.status = ?", userID, "Pending").
 		Scan(&books).Error
 
 	if err != nil {

@@ -7,11 +7,42 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// RunNotificationManually will trigger the sending of notifications
 func RunNotificationManually(c *fiber.Ctx) error {
-	notifications.RunNotificationJobs()
-	return c.JSON(fiber.Map{"message": "Notifications triggered!"})
+	// Example: Send a notification to a specific user
+	userID := c.Query("user_id")
+	bookID := c.Query("book_id")
+	message := c.Query("message")
+
+	if userID == "" || bookID == "" || message == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing required query parameters (user_id, book_id, message)",
+		})
+	}
+
+	// Retrieve user and book details from the database
+	var user model.User
+	var book model.Book
+	if err := middleware.DBConn.First(&user, "user_id = ?", userID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "User not found"})
+	}
+	if err := middleware.DBConn.First(&book, "book_id = ?", bookID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Book not found"})
+	}
+
+	// Send notification manually
+	err := notifications.SendNotification(middleware.DBConn, userID, message) // Capitalize SendNotification
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to send notification"})
+	}
+
+	// Return a success message
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Notification sent successfully!",
+	})
 }
 
+// FetchNotifications will retrieve notifications for a specific user
 func FetchNotifications(c *fiber.Ctx) error {
 	userID := c.Query("user_id") // Get the user_id from query parameter
 
@@ -22,3 +53,50 @@ func FetchNotifications(c *fiber.Ctx) error {
 
 	return c.Status(fiber.StatusOK).JSON(notifications) // Return the notifications as JSON
 }
+
+// FetchUnreadNotifications returns only unread notifications for a user
+func FetchUnreadNotifications(c *fiber.Ctx) error {
+	userID := c.Query("user_id")
+
+	if userID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing user_id query parameter",
+		})
+	}
+
+	var unreadNotifs []model.Notification
+	if err := middleware.DBConn.
+		Where("user_id = ? AND is_read = false", userID).
+		Order("created_at DESC").
+		Find(&unreadNotifs).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Unable to fetch unread notifications",
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(unreadNotifs)
+}
+
+// MarkNotificationAsRead marks a single notification as read by ID
+func MarkNotificationAsRead(c *fiber.Ctx) error {
+	notificationID := c.Params("notification_id")
+
+	var notif model.Notification
+	if err := middleware.DBConn.First(&notif, notificationID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Notification not found",
+		})
+	}
+
+	notif.IsRead = true
+	if err := middleware.DBConn.Save(&notif).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to update notification",
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Notification marked as read",
+	})
+}
+
