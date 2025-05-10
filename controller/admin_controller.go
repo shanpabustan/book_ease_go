@@ -692,6 +692,7 @@ func GetAllReservations(c *fiber.Ctx) error {
 
 	// Ensure preloads are valid: User.UserID is string
 	err := middleware.DBConn.
+		//Where("Status = ?", "Pending").
 		Preload("User"). 
 		Preload("Book").
 		Find(&reservations).Error
@@ -786,6 +787,7 @@ func GetAllBorrowedBooks(c *fiber.Ctx) error {
 		FROM borrowed_books bb
 		JOIN users u ON bb.user_id = u.user_id
 		JOIN books b ON bb.book_id = b.book_id
+		WHERE bb.status IN ('Pending','Overdue')
 		ORDER BY bb.borrow_date DESC
 	`
 
