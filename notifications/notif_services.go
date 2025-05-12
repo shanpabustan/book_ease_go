@@ -8,14 +8,21 @@ import (
 	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 
-	"book_ease_go/model"
 	"book_ease_go/middleware"
+	"book_ease_go/model"
 )
 
 // ========================= HELPERS =========================
 
-// SendNotification sends a notification to a user
+// SendNotification sends both in-app and email notifications to a user
 func SendNotification(db *gorm.DB, userID, message string) error {
+	// Get user details for email
+	var user model.User
+	if err := db.First(&user, "user_id = ?", userID).Error; err != nil {
+		return err
+	}
+
+	// Send in-app notification
 	var existing model.Notification
 	err := db.Where("user_id = ? AND message = ?", userID, message).First(&existing).Error
 
@@ -34,7 +41,22 @@ func SendNotification(db *gorm.DB, userID, message string) error {
 		UserID:  userID,
 		Message: message,
 	}
-	return db.Create(&notification).Error
+	if err := db.Create(&notification).Error; err != nil {
+		return err
+	}
+
+	// Send email notification
+	subject := "Book Ease Notification"
+	htmlBody := fmt.Sprintf(`
+		<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+			<h2 style="color: #333;">Book Ease Notification</h2>
+			<p style="color: #666;">%s</p>
+			<hr style="border: 1px solid #eee;">
+			<p style="color: #999; font-size: 12px;">This is an automated message from Book Ease Library Management System.</p>
+		</div>
+	`, message)
+
+	return SendEmail(user.Email, subject, htmlBody)
 }
 
 // NotifyAllAdmins notifies all admins with a message
@@ -42,7 +64,7 @@ func NotifyAllAdmins(db *gorm.DB, message string) {
 	var admins []model.User
 	if err := db.Where("user_type = ?", "Admin").Find(&admins).Error; err == nil {
 		for _, admin := range admins {
-			SendNotification(db, admin.UserID, message) // Adjusted to SendNotification
+			SendNotification(db, admin.UserID, message)
 		}
 	}
 }
@@ -51,44 +73,44 @@ func NotifyAllAdmins(db *gorm.DB, message string) {
 
 func NotifyApprovedReservation(db *gorm.DB, user model.User, book model.Book) {
 	msg := fmt.Sprintf(`Your reservation for "%s" has been approved. Ready for pickup at the library counter.`, book.Title)
-	SendNotification(db, user.UserID, msg) // Adjusted to SendNotification
+	SendNotification(db, user.UserID, msg)
 }
 
 func NotifyPendingReservation(db *gorm.DB, user model.User, book model.Book) {
 	msg := fmt.Sprintf(`Your reservation for "%s" is being reviewed. You will be notified once it's approved.`, book.Title)
-	SendNotification(db, user.UserID, msg) // Adjusted to SendNotification
+	SendNotification(db, user.UserID, msg)
 }
 
 func NotifyReturnedBook(db *gorm.DB, user model.User, book model.Book) {
 	msg := fmt.Sprintf(`You have successfully returned "%s". Thank you!`, book.Title)
-	SendNotification(db, user.UserID, msg) // Adjusted to SendNotification
+	SendNotification(db, user.UserID, msg)
 }
 
 func NotifyOverdueBook(db *gorm.DB, user model.User, book model.Book) {
 	msg := fmt.Sprintf(`The book "%s" is overdue. Please return it immediately to avoid late penalties.`, book.Title)
-	SendNotification(db, user.UserID, msg) // Adjusted to SendNotification
+	SendNotification(db, user.UserID, msg)
 }
 
 func NotifyAccountBlocked(db *gorm.DB, user model.User) {
 	msg := `Your account has been temporarily blocked due to multiple overdue books. Please contact the librarian.`
-	SendNotification(db, user.UserID, msg) // Adjusted to SendNotification
+	SendNotification(db, user.UserID, msg)
 }
 
 // ========================= ADMIN NOTIFICATIONS =========================
 
 func NotifyAdminReservationRequest(db *gorm.DB, user model.User, book model.Book) {
 	msg := fmt.Sprintf(`%s %s has requested a reservation for "%s". Please review and take action.`, user.FirstName, user.LastName, book.Title)
-	NotifyAllAdmins(db, msg) // Adjusted to NotifyAllAdmins
+	NotifyAllAdmins(db, msg)
 }
 
 func NotifyAdminOverdueBook(db *gorm.DB, user model.User, book model.Book) {
 	msg := fmt.Sprintf(`%s %s has not returned "%s", which is now overdue.`, user.FirstName, user.LastName, book.Title)
-	NotifyAllAdmins(db, msg) // Adjusted to NotifyAllAdmins
+	NotifyAllAdmins(db, msg)
 }
 
 func NotifyAdminNewUser(db *gorm.DB, user model.User) {
 	msg := fmt.Sprintf(`A new user, %s %s, has registered.`, user.FirstName, user.LastName)
-	NotifyAllAdmins(db, msg) // Adjusted to NotifyAllAdmins
+	NotifyAllAdmins(db, msg)
 }
 
 // ========================= CRON JOB =========================

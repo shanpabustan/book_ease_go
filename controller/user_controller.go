@@ -5,7 +5,6 @@ import (
 	"book_ease_go/model"
 	"book_ease_go/notifications"
 	response "book_ease_go/responses"
-	
 	"errors"
 	"fmt"
 	"os"
@@ -25,7 +24,7 @@ func CreateStudent(c *fiber.Ctx) error {
 	// First try: parse as array
 	if err := c.BodyParser(&students); err != nil {
 		// Second try: parse as single user
-		var single model.User	
+		var single model.User
 		if err := c.BodyParser(&single); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"RetCode": "400",
@@ -69,7 +68,6 @@ func CreateStudent(c *fiber.Ctx) error {
 		students[i].Password = string(hashed)
 	}
 
-	
 	// Insert users
 	if err := middleware.DBConn.Table("users").Create(&students).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -92,16 +90,15 @@ func CreateStudent(c *fiber.Ctx) error {
 	})
 }
 
-
 // Secret key for signing JWT tokens (consider storing it securely, like in an environment variable)
 var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
 // GenerateJWT generates a JWT token for the user
 func GenerateJWT(userID string, userType string) (string, error) {
 	claims := jwt.MapClaims{
-		"user_id":  userID,
+		"user_id":   userID,
 		"user_type": userType,
-		"exp":      time.Now().Add(24 * time.Hour).Unix(), // Token expiration time (24 hours)
+		"exp":       time.Now().Add(24 * time.Hour).Unix(), // Token expiration time (24 hours)
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(jwtSecret)
@@ -136,7 +133,7 @@ func LoginUser(c *fiber.Ctx) error {
 	if !users.IsActive {
 		return c.Status(fiber.StatusForbidden).JSON(response.ResponseModel{
 			RetCode: "403",
-			Message: "The account is blocked. Please contact the administrator.",
+			Message: "The account is blocked due to penalty.",
 		})
 	}
 
@@ -226,12 +223,11 @@ func LoginUser(c *fiber.Ctx) error {
 				}
 				return nil
 			}(),
-			"redirect_url":    redirectURL,
-			"borrowed_books":  borrowedBooksWithDetails,
+			"redirect_url":   redirectURL,
+			"borrowed_books": borrowedBooksWithDetails,
 		},
 	})
 }
-
 
 func LogOutUser(c *fiber.Ctx) error {
 	// Invalidate the "jwt" cookie to log the user out
@@ -247,18 +243,17 @@ func LogOutUser(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
 		RetCode: "200",
 		Message: "Logout successful",
-	})	
+	})
 }
-
 
 // EditUser updates a user's personal information
 func EditUser(c *fiber.Ctx) error {
 	var request struct {
-		UserID     string `json:"user_id"`
-		FirstName  string `json:"first_name"`
-		LastName   string `json:"last_name"`
-		MiddleName string `json:"middle_name"`
-		Suffix     string `json:"suffix"`
+		UserID        string `json:"user_id"`
+		FirstName     string `json:"first_name"`
+		LastName      string `json:"last_name"`
+		MiddleName    string `json:"middle_name"`
+		Suffix        string `json:"suffix"`
 		ContactNumber string `json:"contact_number"`
 		Program       string `json:"program"`
 		YearLevel     string `json:"year_level"`
@@ -337,10 +332,6 @@ func UpdateAvatar(c *fiber.Ctx) error {
 	})
 }
 
-
-
-
-
 func ReserveBook(c *fiber.Ctx) error {
 	var reservation model.Reservation
 
@@ -360,7 +351,7 @@ func ReserveBook(c *fiber.Ctx) error {
 			Data:    nil,
 		})
 	}
-	
+
 	if book.AvailableCopies <= 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
 			RetCode: "400",
@@ -377,7 +368,6 @@ func ReserveBook(c *fiber.Ctx) error {
 			Data:    nil,
 		})
 	}
-
 
 	middleware.DBConn.
 		Where("status = ? AND expiry < ?", "Pending", time.Now()).
@@ -419,11 +409,6 @@ func ReserveBook(c *fiber.Ctx) error {
 	})
 }
 
-
-
-
-
-
 //FETCHING SECTION
 
 // will base on the most borrowed books by the users
@@ -461,17 +446,17 @@ func FetchBorrowedBooks(c *fiber.Ctx) error {
 
 	// Updated BorrowedBookData struct to include additional fields
 	type BorrowedBookData struct {
-		BookID       int       `json:"book_id"`
-		Title        string    `json:"title"`
-		Picture      string    `json:"picture"`
-		Copies       int       `json:"copies"`
-		DueDate      time.Time `json:"due_date"`
-		Author       string    `json:"author"`       // New field
-		Year         string    `json:"year_published"`         // New field
-		ISBN         string    `json:"isbn"`         // New field
-		ShelfLocation string    `json:"shelf_location"` // New field
+		BookID         int       `json:"book_id"`
+		Title          string    `json:"title"`
+		Picture        string    `json:"picture"`
+		Copies         int       `json:"copies"`
+		DueDate        time.Time `json:"due_date"`
+		Author         string    `json:"author"`          // New field
+		Year           string    `json:"year_published"`  // New field
+		ISBN           string    `json:"isbn"`            // New field
+		ShelfLocation  string    `json:"shelf_location"`  // New field
 		LibrarySection string    `json:"library_section"` // New field
-		Description  string    `json:"description"`    // New field
+		Description    string    `json:"description"`     // New field
 	}
 
 	var books []BorrowedBookData
@@ -496,6 +481,63 @@ func FetchBorrowedBooks(c *fiber.Ctx) error {
 	})
 }
 
+func FetchBorrowedBooksByStatus(c *fiber.Ctx) error {
+	userID := c.Query("user_id")
+	status := c.Query("status")
+
+	if userID == "" {
+		return c.JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "User ID is required",
+			Data:    nil,
+		})
+	}
+
+	if status == "" {
+		return c.JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Status is required",
+			Data:    nil,
+		})
+	}
+
+	type BorrowedBookData struct {
+		BookID     int       `json:"book_id"`
+		Title      string    `json:"title"`
+		Picture    string    `json:"picture"`
+		BorrowDate time.Time `json:"borrow_date"`
+		DueDate    time.Time `json:"due_date"`
+		Status     string    `json:"status"`
+	}
+
+	var books []BorrowedBookData
+	err := middleware.DBConn.Table("borrowed_books").
+		Select("books.book_id, books.title, books.picture, borrowed_books.borrow_date, borrowed_books.due_date, borrowed_books.status").
+		Joins("JOIN books ON books.book_id = borrowed_books.book_id").
+		Where("borrowed_books.user_id = ? AND borrowed_books.status = ?", userID, status).
+		Scan(&books).Error
+
+	if err != nil {
+		return c.JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to fetch borrowed books",
+			Data:    err.Error(),
+		})
+	}
+
+	// Add base64 prefix to picture if it exists
+	for i := range books {
+		if books[i].Picture != "" {
+			books[i].Picture = "data:image/jpeg;base64," + books[i].Picture
+		}
+	}
+
+	return c.JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "Borrowed Books Fetched Successfully",
+		Data:    books,
+	})
+}
 
 func FetchAllBooks(c *fiber.Ctx) error {
 	type BookWithReservedCount struct {
@@ -531,9 +573,3 @@ func FetchAllBooks(c *fiber.Ctx) error {
 		Data:    booksWithCount,
 	})
 }
-
-
-
-
-
-

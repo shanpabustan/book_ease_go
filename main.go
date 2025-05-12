@@ -56,6 +56,12 @@ func main() {
 	go controller.StartPenaltyChecker()
 	
 	notifications.StartOverdueCheckerCron()
+	notifications.InitializeEmailConfig()
+	if err := notifications.TestEmailConfig(); err != nil {
+		fmt.Println("❌ Email configuration error:, err")
+	} else {
+		fmt.Println("✅ Email configuration is working!")
+	}
 
 	
 

@@ -111,8 +111,6 @@ func CountOverdueBooks(c *fiber.Ctx) error {
 
 
 
-
-
 func EditAdminUser(c *fiber.Ctx) error {
 	var request struct {
 		UserID   string `json:"user_id"`
@@ -850,61 +848,69 @@ func StartPenaltyChecker() {
 
 // Function to check users' penalties and block them if necessary
 func checkAndBlockUsers() {
-    var users []model.User
-    // Fetch all active users (or all users depending on your requirement)
-    if err := middleware.DBConn.Where("is_active = ?", true).Find(&users).Error; err != nil {
-        fmt.Println("Error fetching users:", err)
-        return
-    }
+	var users []model.User
+	// Fetch all active users (or all users depending on your requirement)
+	if err := middleware.DBConn.Where("is_active = ?", true).Find(&users).Error; err != nil {
+		fmt.Println("Error fetching users:", err)
+		return
+	}
 
-    for _, user := range users {
-        penaltyCount := 0
-        var borrowedBooks []model.BorrowedBook
-        // Fetch the user's borrowed books
-        if err := middleware.DBConn.Where("user_id = ?", user.UserID).
-            Order("borrow_date DESC").
-            Find(&borrowedBooks).Error; err != nil {
-            fmt.Println("Error fetching borrowed books for user", user.UserID, ":", err)
-            continue
-        }
+	for _, user := range users {
+		var borrowedBooks []model.BorrowedBook
 
-        for i, book := range borrowedBooks {
-            // Automatically mark overdue books
-            if book.Status != "Returned" && book.ReturnDate == nil && time.Now().After(book.DueDate) {
-                borrowedBooks[i].Status = "Overdue"
-                err := middleware.DBConn.Model(&model.BorrowedBook{}).
-                    Where("borrow_id = ?", book.BorrowID).
-                    Update("status", "Overdue").Error
-                if err != nil {
-                    fmt.Println("Failed to update status for book", book.BorrowID, ":", err)
-                    continue
-                }
-            }
+		// Fetch the user's borrowed books
+		if err := middleware.DBConn.Where("user_id = ?", user.UserID).
+			Order("borrow_date DESC").
+			Find(&borrowedBooks).Error; err != nil {
+			fmt.Println("Error fetching borrowed books for user", user.UserID, ":", err)
+			continue
+		}
 
-            // Recalculate penalty count based on overdue status
-            isLate := borrowedBooks[i].Status == "Overdue" || (book.ReturnDate != nil && book.ReturnDate.After(book.DueDate))
+		// Automatically mark overdue books
+		for i, book := range borrowedBooks {
+			if book.Status != "Returned" && book.ReturnDate == nil && time.Now().After(book.DueDate) {
+				borrowedBooks[i].Status = "Overdue"
+				err := middleware.DBConn.Model(&model.BorrowedBook{}).
+					Where("borrow_id = ?", book.BorrowID).
+					Update("status", "Overdue").Error
+				if err != nil {
+					fmt.Println("Failed to update status for book", book.BorrowID, ":", err)
+					continue
+				}
+			}
+		}
 
-            if isLate {
-                penaltyCount++
-            } else {
-                penaltyCount = 0
-            }
+		// Count how many books are currently overdue and not yet returned
+		penaltyCount := 0
+		for _, book := range borrowedBooks {
+			if book.Status == "Overdue" && book.ReturnDate == nil {
+				penaltyCount++
+			}
+		}
 
-            if penaltyCount >= 3 {
-                // Block the user if they have 3 consecutive penalties
-                if user.IsActive {
-                    user.IsActive = false
-                    if err := middleware.DBConn.Save(&user).Error; err != nil {
-                        fmt.Println("Failed to update user status for user", user.UserID, ":", err)
-                        continue
-                    }
-                    fmt.Println("User", user.UserID, "has been blocked due to 3 consecutive penalties.")
-                }
-                break  // Stop checking further books once the user is blocked
-            }
-        }
-    }
+		// Block or unblock user based on penalties
+		if penaltyCount >= 3 {
+			if user.IsActive {
+				user.IsActive = false
+				if err := middleware.DBConn.Save(&user).Error; err != nil {
+					fmt.Println("Failed to block user", user.UserID, ":", err)
+				} else {
+					fmt.Println("User", user.UserID, "has been blocked due to 3 unreturned overdue books.")
+				}
+			}
+		} else {
+			if !user.IsActive {
+				user.IsActive = true
+				if err := middleware.DBConn.Save(&user).Error; err != nil {
+					fmt.Println("Failed to unblock user", user.UserID, ":", err)
+				} else {
+					fmt.Println("User", user.UserID, "has been unblocked.")
+				}
+			}
+		}
+	}
 }
+
 
 
 

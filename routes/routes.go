@@ -22,6 +22,8 @@ func AppRoutes(app *fiber.App) {
 	stud.Post("/logout", controller.LogOutUser)
 	stud.Put("/edit", controller.EditUser)
 	stud.Post("/add-pic", controller.UpdateAvatar)
+	stud.Get("/get-books-status", controller.FetchBorrowedBooksByStatus)
+	
 
 
 
