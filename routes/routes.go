@@ -2,6 +2,7 @@ package routes
 
 import (
 	"book_ease_go/controller"
+
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -13,6 +14,8 @@ func AppRoutes(app *fiber.App) {
 
 	// CREATE YOUR ENDPOINTS HERE
 
+	// Change password endpoint (for both admin and student)
+	app.Post("/change-password", controller.ChangePassword)
 
 	//student routes
 	stud := app.Group("/stud")
@@ -23,21 +26,17 @@ func AppRoutes(app *fiber.App) {
 	stud.Put("/edit", controller.EditUser)
 	stud.Post("/add-pic", controller.UpdateAvatar)
 	stud.Get("/get-books-status", controller.FetchBorrowedBooksByStatus)
-	
-
-
 
 	//Reserve Book - Student
 	reserve := app.Group("/reserve")
 	reserve.Post("/reserve-book", controller.ReserveBook)
-	
+
 	//admin and student fetch of books.
 	app.Get("/get-all", controller.FetchAllBooks)
-	
 
 	//Admin Routes
-	admin :=app.Group("/admin")
-	admin.Post("/add-book", controller.AddBook)	
+	admin := app.Group("/admin")
+	admin.Post("/add-book", controller.AddBook)
 	admin.Put("/edit-book/:book_id", controller.UpdateBook)
 	admin.Get("/get-users", controller.GetUsers)
 	admin.Get("/count", controller.CountStudents)
@@ -47,7 +46,7 @@ func AppRoutes(app *fiber.App) {
 	admin.Put("/disable-students", controller.DisableAllStudents)
 	admin.Put("/approve-reservation/:reservation_id", controller.ApproveReservation)
 	admin.Put("/cancel-reservation/:reservation_id", controller.DisapproveReservation)
-	admin.Put("/return-book/:borrowed_id", controller.ReturnBook)	
+	admin.Put("/return-book/:borrowed_id", controller.ReturnBook)
 	admin.Get("/get-reservations", controller.GetAllReservations)
 	//admin.Get("/check-penalty/:userID", controller.)
 	admin.Get("/export-books", controller.ExportBooks)
@@ -59,17 +58,8 @@ func AppRoutes(app *fiber.App) {
 	admin.Get("/get-borrowed-books", controller.GetAllBorrowedBooks)
 	admin.Put("/unblock-student/:userID", controller.UnblockUser)
 
-	
 	app.Get("/test/fetch-notifs", controller.FetchNotifications)
 	app.Get("/notifications/unread", controller.FetchUnreadNotifications)
 	app.Put("/notifications/mark-as-read/:notification_id", controller.MarkNotificationAsRead)
 
-	
-
-	
-
-
-
-
-	
 }
