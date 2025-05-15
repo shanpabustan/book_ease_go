@@ -1,21 +1,23 @@
 package controller
 
 import (
-	"book_ease_go/exports"
+	export "book_ease_go/exports"
 	"book_ease_go/middleware"
 	"book_ease_go/model"
 	"book_ease_go/notifications"
 	response "book_ease_go/responses"
+	"encoding/json"
 	"fmt"
 
 	"strconv"
 	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"golang.org/x/crypto/bcrypt"
 )
 
-//Data Analytics
-//Overall Registered Users "Student
+// Data Analytics
+// Overall Registered Users "Student
 func CountStudents(c *fiber.Ctx) error {
 	var count int64
 
@@ -108,9 +110,6 @@ func CountOverdueBooks(c *fiber.Ctx) error {
 	})
 }
 
-
-
-
 func EditAdminUser(c *fiber.Ctx) error {
 	var request struct {
 		UserID   string `json:"user_id"`
@@ -164,8 +163,6 @@ func EditAdminUser(c *fiber.Ctx) error {
 	})
 }
 
-
-
 // Add or Register a Book
 func AddBook(c *fiber.Ctx) error {
 	var book model.Book
@@ -199,7 +196,7 @@ func AddBook(c *fiber.Ctx) error {
 			Message: "Invalid book condition. Must be 'New' or 'Used'.",
 		})
 	}
-	
+
 	// Save to DB
 	if err := middleware.DBConn.Create(&book).Error; err != nil {
 		fmt.Println("Error inserting book:", err)
@@ -216,7 +213,6 @@ func AddBook(c *fiber.Ctx) error {
 		Data:    book,
 	})
 }
-
 
 // Update Details of the book
 func UpdateBook(c *fiber.Ctx) error {
@@ -261,8 +257,8 @@ func UpdateBook(c *fiber.Ctx) error {
 		AvailableCopies: book.AvailableCopies,
 		BookCondition:   book.BookCondition,
 		Picture:         book.Picture,
-		Version: 		book.Version,
-		Description:    book.Description,
+		Version:         book.Version,
+		Description:     book.Description,
 	}).Error; err != nil {
 		// Log and return the error
 		fmt.Printf("Error updating book: %v\n", err)
@@ -281,77 +277,74 @@ func UpdateBook(c *fiber.Ctx) error {
 	})
 }
 
-
 // Get Students
 func GetUsers(c *fiber.Ctx) error {
-    var users []model.User
+	var users []model.User
 
-    // Fetch only users with user_type = "Student"
-    if err := middleware.DBConn.Debug().
-        Table("users").
-        Where("user_type = ?", "Student").
-        Find(&users).Error; err != nil {
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Failed to fetch users",
-            Data:    err.Error(),
-        })
-    }
+	// Fetch only users with user_type = "Student"
+	if err := middleware.DBConn.Debug().
+		Table("users").
+		Where("user_type = ?", "Student").
+		Find(&users).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to fetch users",
+			Data:    err.Error(),
+		})
+	}
 
-    // Format the user data
-    var formattedUsers []map[string]interface{}
-    for _, user := range users {
-        // Handle optional fields inline
-        middleName := ""
-        if user.MiddleName != nil {
-            middleName = *user.MiddleName
-        }
+	// Format the user data
+	var formattedUsers []map[string]interface{}
+	for _, user := range users {
+		// Handle optional fields inline
+		middleName := ""
+		if user.MiddleName != nil {
+			middleName = *user.MiddleName
+		}
 
-        suffix := ""
-        if user.Suffix != nil {
-            suffix = *user.Suffix
-        }
+		suffix := ""
+		if user.Suffix != nil {
+			suffix = *user.Suffix
+		}
 
-        yearLevel := ""
-        if user.YearLevel != nil {
-            yearLevel = *user.YearLevel
-        }
+		yearLevel := ""
+		if user.YearLevel != nil {
+			yearLevel = *user.YearLevel
+		}
 
-        program := ""
-        if user.Program != nil {
-            program = *user.Program
-        }
+		program := ""
+		if user.Program != nil {
+			program = *user.Program
+		}
 
-        // Build full name with clean formatting
-        fullName := fmt.Sprintf("%s, %s", user.LastName, user.FirstName)
-        if middleName != "" {
-            fullName += " " + middleName
-        }
-        if suffix != "" {
-            fullName += " " + suffix
-        }
+		// Build full name with clean formatting
+		fullName := fmt.Sprintf("%s, %s", user.LastName, user.FirstName)
+		if middleName != "" {
+			fullName += " " + middleName
+		}
+		if suffix != "" {
+			fullName += " " + suffix
+		}
 
-        formattedUsers = append(formattedUsers, map[string]interface{}{
-            "user_id":    user.UserID,
-            "name":       fullName,
-            "email":     user.Email,  
-            "program":    program,     
-            "year_level": yearLevel,
-            "contact_number": user.ContactNumber,
-            "is_active":      user.IsActive,
-            
-        })
-    }
+		formattedUsers = append(formattedUsers, map[string]interface{}{
+			"user_id":        user.UserID,
+			"name":           fullName,
+			"email":          user.Email,
+			"program":        program,
+			"year_level":     yearLevel,
+			"contact_number": user.ContactNumber,
+			"is_active":      user.IsActive,
+		})
+	}
 
-    return c.JSON(response.ResponseModel{
-        RetCode: "200",
-        Message: "Users fetched successfully",
-        Data:    formattedUsers,
-    })
+	return c.JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "Users fetched successfully",
+		Data:    formattedUsers,
+	})
 }
 
-
-//Disable Student Accounts
+// Disable Student Accounts
 func DisableAllStudents(c *fiber.Ctx) error {
 	result := middleware.DBConn.
 		Model(&model.User{}).
@@ -376,303 +369,296 @@ func DisableAllStudents(c *fiber.Ctx) error {
 // Admin - Approve reservation and create borrowed book record (Picked Up remarks).
 // ApproveReservation function with notifications
 func ApproveReservation(c *fiber.Ctx) error {
-    reservationIDStr := c.Params("reservation_id")
-    reservationID, err := strconv.Atoi(reservationIDStr)
-    if err != nil {
-        return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
-            RetCode: "400",
-            Message: "Invalid reservation ID",
-            Data:    err.Error(),
-        })
-    }
+	reservationIDStr := c.Params("reservation_id")
+	reservationID, err := strconv.Atoi(reservationIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Invalid reservation ID",
+			Data:    err.Error(),
+		})
+	}
 
-    var reservation model.Reservation
-    if err := middleware.DBConn.First(&reservation, "reservation_id = ?", reservationID).Error; err != nil {
-        return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
-            RetCode: "404",
-            Message: "Reservation not found",
-            Data:    nil,
-        })
-    }
+	var reservation model.Reservation
+	if err := middleware.DBConn.First(&reservation, "reservation_id = ?", reservationID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
+			RetCode: "404",
+			Message: "Reservation not found",
+			Data:    nil,
+		})
+	}
 
-    if reservation.Status != "Pending" {
-        return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
-            RetCode: "400",
-            Message: "Only pending reservations can be approved",
-            Data:    nil,
-        })
-    }
+	if reservation.Status != "Pending" {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Only pending reservations can be approved",
+			Data:    nil,
+		})
+	}
 
-    tx := middleware.DBConn.Begin()
-    defer func() {
-        if r := recover(); r != nil {
-            tx.Rollback()
-        }
-    }()
+	tx := middleware.DBConn.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
 
-    var book model.Book
-    if err := tx.First(&book, reservation.BookID).Error; err != nil {
-        tx.Rollback()
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Book not found",
-            Data:    err.Error(),
-        })
-    }
+	var book model.Book
+	if err := tx.First(&book, reservation.BookID).Error; err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Book not found",
+			Data:    err.Error(),
+		})
+	}
 
-    if book.AvailableCopies <= 0 {
-        tx.Rollback()
-        return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
-            RetCode: "400",
-            Message: "No available copies for this book",
-            Data:    nil,
-        })
-    }
+	if book.AvailableCopies <= 0 {
+		tx.Rollback()
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "No available copies for this book",
+			Data:    nil,
+		})
+	}
 
-    book.AvailableCopies--
-    if err := tx.Save(&book).Error; err != nil {
-        tx.Rollback()
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Failed to update book availability",
-            Data:    err.Error(),
-        })
-    }
+	book.AvailableCopies--
+	if err := tx.Save(&book).Error; err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to update book availability",
+			Data:    err.Error(),
+		})
+	}
 
-    reservation.Status = "Approved"
-    if err := tx.Save(&reservation).Error; err != nil {
-        tx.Rollback()
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Failed to approve reservation",
-            Data:    err.Error(),
-        })
-    }
+	reservation.Status = "Approved"
+	if err := tx.Save(&reservation).Error; err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to approve reservation",
+			Data:    err.Error(),
+		})
+	}
 
-    borrowed := model.BorrowedBook{
-        ReservationID:       reservation.ReservationID,
-        UserID:              reservation.UserID,
-        BookID:              reservation.BookID,
-        BorrowDate:          time.Now(),
-        DueDate:             time.Now().AddDate(0, 0, 7),
-        Status:              "Pending",
-        BookConditionBefore: book.BookCondition,
-    }
+	borrowed := model.BorrowedBook{
+		ReservationID:       reservation.ReservationID,
+		UserID:              reservation.UserID,
+		BookID:              reservation.BookID,
+		BorrowDate:          time.Now(),
+		DueDate:             time.Now().AddDate(0, 0, 7),
+		Status:              "Pending",
+		BookConditionBefore: book.BookCondition,
+	}
 
-    if err := tx.Create(&borrowed).Error; err != nil {
-        tx.Rollback()
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Reservation approved, but failed to create borrowed book entry",
-            Data:    err.Error(),
-        })
-    }
+	if err := tx.Create(&borrowed).Error; err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Reservation approved, but failed to create borrowed book entry",
+			Data:    err.Error(),
+		})
+	}
 
-    if err := tx.Commit().Error; err != nil {
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Failed to commit transaction",
-            Data:    err.Error(),
-        })
-    }
+	if err := tx.Commit().Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to commit transaction",
+			Data:    err.Error(),
+		})
+	}
 
-    var user model.User
-    if err := middleware.DBConn.First(&user, "user_id = ?", reservation.UserID).Error; err != nil {
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Failed to fetch user details",
-            Data:    err.Error(),
-        })
-    }
+	var user model.User
+	if err := middleware.DBConn.First(&user, "user_id = ?", reservation.UserID).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to fetch user details",
+			Data:    err.Error(),
+		})
+	}
 
-    // Send notification for the approved reservation
-    go func() {
-        notifications.NotifyApprovedReservation(middleware.DBConn, user, book)
-    }()
+	// Send notification for the approved reservation
+	go func() {
+		notifications.NotifyApprovedReservation(middleware.DBConn, user, book)
+	}()
 
-    return c.JSON(response.ResponseModel{
-        RetCode: "200",
-        Message: "Reservation approved and book borrowed successfully",
-        Data:    borrowed,
-    })
+	return c.JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "Reservation approved and book borrowed successfully",
+		Data:    borrowed,
+	})
 }
 
 // DisapproveReservation function with notifications
 func DisapproveReservation(c *fiber.Ctx) error {
-    reservationID := c.Params("reservation_id")
+	reservationID := c.Params("reservation_id")
 
-    var reservation model.Reservation
-    if err := middleware.DBConn.First(&reservation, "reservation_id = ?", reservationID).Error; err != nil {
-        return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
-            RetCode: "404",
-            Message: "Reservation not found",
-            Data:    nil,
-        })
-    }
+	var reservation model.Reservation
+	if err := middleware.DBConn.First(&reservation, "reservation_id = ?", reservationID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
+			RetCode: "404",
+			Message: "Reservation not found",
+			Data:    nil,
+		})
+	}
 
-    if reservation.Status != "Pending" {
-        return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
-            RetCode: "400",
-            Message: "Only pending reservations can be disapproved",
-            Data:    nil,
-        })
-    }
+	if reservation.Status != "Pending" {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Only pending reservations can be disapproved",
+			Data:    nil,
+		})
+	}
 
-    reservation.Status = "Cancelled"
-    if err := middleware.DBConn.Save(&reservation).Error; err != nil {
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Failed to disapprove reservation",
-            Data:    err.Error(),
-        })
-    }
+	reservation.Status = "Cancelled"
+	if err := middleware.DBConn.Save(&reservation).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to disapprove reservation",
+			Data:    err.Error(),
+		})
+	}
 
-    var book model.Book
-    _ = middleware.DBConn.First(&book, reservation.BookID).Error
+	var book model.Book
+	_ = middleware.DBConn.First(&book, reservation.BookID).Error
 
-   // Send the disapproval notification
-   var user model.User
-   if err := middleware.DBConn.First(&user, "user_id = ?", reservation.UserID).Error; err != nil {
-	   return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-		   RetCode: "500",
-		   Message: "Failed to fetch user details",
-		   Data:    err.Error(),
-	   })
-   }
+	// Send the disapproval notification
+	var user model.User
+	if err := middleware.DBConn.First(&user, "user_id = ?", reservation.UserID).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to fetch user details",
+			Data:    err.Error(),
+		})
+	}
 
-   go func() {
-	   notifications.NotifyPendingReservation(middleware.DBConn, user, book)
-   }()
+	go func() {
+		notifications.NotifyPendingReservation(middleware.DBConn, user, book)
+	}()
 
-    return c.JSON(response.ResponseModel{
-        RetCode: "200",
-        Message: "Reservation disapproved successfully",
-        Data:    reservation,
-    })
+	return c.JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "Reservation disapproved successfully",
+		Data:    reservation,
+	})
 }
-
-
 
 func ReturnBook(c *fiber.Ctx) error {
-    borrowedIDStr := c.Params("borrowed_id")
-    borrowedID, err := strconv.Atoi(borrowedIDStr)
-    if err != nil {
-        return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
-            RetCode: "400",
-            Message: "Invalid borrowed book ID",
-            Data:    err.Error(),
-        })
-    }
+	borrowedIDStr := c.Params("borrowed_id")
+	borrowedID, err := strconv.Atoi(borrowedIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Invalid borrowed book ID",
+			Data:    err.Error(),
+		})
+	}
 
-    // Get return details from admin input
-    var reqData struct {
-        BookConditionAfter string  `json:"book_condition_after"`
-        PenaltyAmount      float64 `json:"penalty_amount"`
-    }
-    if err := c.BodyParser(&reqData); err != nil {
-        return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
-            RetCode: "400",
-            Message: "Invalid request body",
-            Data:    err.Error(),
-        })
-    }
+	// Get return details from admin input
+	var reqData struct {
+		BookConditionAfter string  `json:"book_condition_after"`
+		PenaltyAmount      float64 `json:"penalty_amount"`
+	}
+	if err := c.BodyParser(&reqData); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Invalid request body",
+			Data:    err.Error(),
+		})
+	}
 
-    tx := middleware.DBConn.Begin()
-    defer func() {
-        if r := recover(); r != nil {
-            tx.Rollback()
-        }
-    }()
+	tx := middleware.DBConn.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
 
-    var borrowed model.BorrowedBook
-    if err := tx.First(&borrowed, "borrow_id = ?", borrowedID).Error; err != nil {
-        tx.Rollback()
-        return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
-            RetCode: "404",
-            Message: "Borrowed book record not found",
-            Data:    nil,
-        })
-    }
+	var borrowed model.BorrowedBook
+	if err := tx.First(&borrowed, "borrow_id = ?", borrowedID).Error; err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
+			RetCode: "404",
+			Message: "Borrowed book record not found",
+			Data:    nil,
+		})
+	}
 
-    if borrowed.Status == "Returned"  {
-        tx.Rollback()
-        return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
-            RetCode: "400",
-            Message: "This book has already been returned",
-            Data:    nil,
-        })
-    }
+	if borrowed.Status == "Returned" {
+		tx.Rollback()
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "This book has already been returned",
+			Data:    nil,
+		})
+	}
 
-	
+	var book model.Book
+	if err := tx.First(&book, borrowed.BookID).Error; err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Book not found",
+			Data:    err.Error(),
+		})
+	}
 
-    var book model.Book
-    if err := tx.First(&book, borrowed.BookID).Error; err != nil {
-        tx.Rollback()
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Book not found",
-            Data:    err.Error(),
-        })
-    }
+	// Increase available copies
+	book.AvailableCopies++
+	if err := tx.Save(&book).Error; err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to update book availability",
+			Data:    err.Error(),
+		})
+	}
 
-    // Increase available copies
-    book.AvailableCopies++
-    if err := tx.Save(&book).Error; err != nil {
-        tx.Rollback()
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Failed to update book availability",
-            Data:    err.Error(),
-        })
-    }
+	// Set return info
+	now := time.Now()
+	borrowed.ReturnDate = &now
 
-    // Set return info
-    now := time.Now()
-    borrowed.ReturnDate = &now
+	// Determine return status
+	borrowed.Status = "Returned"
 
-    // Determine return status
-    borrowed.Status = "Returned"
+	// Set BookConditionAfter and PenaltyAmount from request
+	if reqData.BookConditionAfter != "" {
+		borrowed.BookConditionAfter = &reqData.BookConditionAfter
+	}
 
-    // Set BookConditionAfter and PenaltyAmount from request
-    if reqData.BookConditionAfter != "" {
-        borrowed.BookConditionAfter = &reqData.BookConditionAfter
-    }
+	if reqData.PenaltyAmount > 0 {
+		borrowed.PenaltyAmount = reqData.PenaltyAmount
+	}
 
-    if reqData.PenaltyAmount > 0 {
-        borrowed.PenaltyAmount = reqData.PenaltyAmount
-    }
+	if err := tx.Save(&borrowed).Error; err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to update borrowed book record",
+			Data:    err.Error(),
+		})
+	}
 
-    if err := tx.Save(&borrowed).Error; err != nil {
-        tx.Rollback()
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Failed to update borrowed book record",
-            Data:    err.Error(),
-        })
-    }
-
-    if err := tx.Commit().Error; err != nil {
-        return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-            RetCode: "500",
-            Message: "Failed to commit transaction",
-            Data:    err.Error(),
-        })
-    }
+	if err := tx.Commit().Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to commit transaction",
+			Data:    err.Error(),
+		})
+	}
 
 	var user model.User
-    if err := middleware.DBConn.First(&user, "user_id = ?", borrowed.UserID).Error; err == nil {
-        notifications.NotifyReturnedBook(middleware.DBConn, user, book)
-    }
+	if err := middleware.DBConn.First(&user, "user_id = ?", borrowed.UserID).Error; err == nil {
+		notifications.NotifyReturnedBook(middleware.DBConn, user, book)
+	}
 
-    return c.JSON(response.ResponseModel{
-        RetCode: "200",
-        Message: "Book return recorded successfully",
-        Data:    borrowed,
-    })
+	return c.JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "Book return recorded successfully",
+		Data:    borrowed,
+	})
 }
-
-
-
 
 func GetAllReservations(c *fiber.Ctx) error {
 	type ReservationResponse struct {
@@ -691,7 +677,7 @@ func GetAllReservations(c *fiber.Ctx) error {
 	// Ensure preloads are valid: User.UserID is string
 	err := middleware.DBConn.
 		//Where("Status = ?", "Pending").
-		Preload("User"). 
+		Preload("User").
 		Preload("Book").
 		Find(&reservations).Error
 
@@ -819,8 +805,6 @@ func GetAllBorrowedBooks(c *fiber.Ctx) error {
 	return c.JSON(response)
 }
 
-
-
 func formatFullName(lastName, firstName string, middleName, suffix *string) string {
 	fullName := lastName + ", " + firstName
 
@@ -835,15 +819,15 @@ func formatFullName(lastName, firstName string, middleName, suffix *string) stri
 
 // StartPenaltyChecker will start a background task that checks for users with 3 consecutive penalties every 30 seconds
 func StartPenaltyChecker() {
-    ticker := time.NewTicker(30 * time.Second)  // Set ticker to trigger every 30 seconds
-    defer ticker.Stop()
+	ticker := time.NewTicker(30 * time.Second) // Set ticker to trigger every 30 seconds
+	defer ticker.Stop()
 
-    for {
-        select {
-        case <-ticker.C:
-            checkAndBlockUsers()  // Call the function that checks and blocks users
-        }
-    }
+	for {
+		select {
+		case <-ticker.C:
+			checkAndBlockUsers() // Call the function that checks and blocks users
+		}
+	}
 }
 
 // Function to check users' penalties and block them if necessary
@@ -911,14 +895,6 @@ func checkAndBlockUsers() {
 	}
 }
 
-
-
-
-
-
-
-
-
 func ExportBooks(c *fiber.Ctx) error {
 	var books []model.Book
 	if err := middleware.DBConn.Find(&books).Error; err != nil {
@@ -968,9 +944,6 @@ func ExportBooks(c *fiber.Ctx) error {
 	return c.Send(content)
 }
 
-
-
-
 func ExportUsers(c *fiber.Ctx) error {
 	var users []model.User
 	if err := middleware.DBConn.Find(&users).Error; err != nil {
@@ -985,7 +958,7 @@ func ExportUsers(c *fiber.Ctx) error {
 	var fileContent []byte
 	var contentType string
 	var fileExtension string
-    var err error
+	var err error
 
 	// Export based on the format specified in query params
 	switch format {
@@ -1060,7 +1033,6 @@ func GetSemesterEndDate(c *fiber.Ctx) error {
 	})
 }
 
-
 func UpdateSemesterEndDate(c *fiber.Ctx) error {
 	type Request struct {
 		Value string `json:"value"` // Format: YYYY-MM-DD
@@ -1109,7 +1081,6 @@ func UpdateSemesterEndDate(c *fiber.Ctx) error {
 	})
 }
 
-
 func EndOfSemester(c *fiber.Ctx) error {
 	var setting model.Setting
 	if err := middleware.DBConn.Where("key = ?", "semester_end_date").First(&setting).Error; err != nil {
@@ -1157,49 +1128,268 @@ func EndOfSemester(c *fiber.Ctx) error {
 }
 
 func UnblockUser(c *fiber.Ctx) error {
-    userID := c.Params("userID")
+	userID := c.Params("userID")
 
-    // Find the user by userID
-    var user model.User
-    if err := middleware.DBConn.First(&user, "user_id = ?", userID).Error; err != nil {
-        return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-            "RetCode": 404,
-            "Message": "User not found",
-            "Data":    nil,
-        })
-    }
+	// Find the user by userID
+	var user model.User
+	if err := middleware.DBConn.First(&user, "user_id = ?", userID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"RetCode": 404,
+			"Message": "User not found",
+			"Data":    nil,
+		})
+	}
 
-    // Check if the user is already active
-    if user.IsActive {
-        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-            "RetCode": 400,
-            "Message": "User is already active",
-            "Data":    nil,
-        })
-    }
+	// Check if the user is already active
+	if user.IsActive {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"RetCode": 400,
+			"Message": "User is already active",
+			"Data":    nil,
+		})
+	}
 
-    // Unblock the user by setting IsActive to true
-    user.IsActive = true
-    if err := middleware.DBConn.Save(&user).Error; err != nil {
-        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-            "RetCode": 500,
-            "Message": "Failed to unblock user",
-            "Data":    nil,
-        })
-    }
+	// Unblock the user by setting IsActive to true
+	user.IsActive = true
+	if err := middleware.DBConn.Save(&user).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"RetCode": 500,
+			"Message": "Failed to unblock user",
+			"Data":    nil,
+		})
+	}
 
-    // Success response
-    return c.JSON(fiber.Map{
-        "RetCode": 200,
-        "Message": "User unblocked successfully",
-        "Data": fiber.Map{
-            "user_id":  user.UserID,
-            "is_active": user.IsActive,
-        },
-    })
+	// Success response
+	return c.JSON(fiber.Map{
+		"RetCode": 200,
+		"Message": "User unblocked successfully",
+		"Data": fiber.Map{
+			"user_id":   user.UserID,
+			"is_active": user.IsActive,
+		},
+	})
 }
 
+// GetMostBorrowedBooks returns the most borrowed books for a specific month and year
+func GetMostBorrowedBooks(c *fiber.Ctx) error {
+	// Get month and year from query params, default to current month if not provided
+	monthStr := c.Query("month")
+	yearStr := c.Query("year")
 
+	var month, year int
+	currentTime := time.Now()
 
+	if monthStr == "" || yearStr == "" {
+		month = int(currentTime.Month())
+		year = currentTime.Year()
+	} else {
+		var err error
+		month, err = strconv.Atoi(monthStr)
+		if err != nil || month < 1 || month > 12 {
+			return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+				RetCode: "400",
+				Message: "Invalid month. Must be between 1 and 12",
+				Data:    nil,
+			})
+		}
 
+		year, err = strconv.Atoi(yearStr)
+		if err != nil || year < 2000 || year > currentTime.Year() {
+			return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+				RetCode: "400",
+				Message: "Invalid year",
+				Data:    nil,
+			})
+		}
+	}
 
+	type BookBorrowCount struct {
+		BookID      int    `json:"book_id"`
+		Title       string `json:"title"`
+		Picture     string `json:"picture"`
+		BorrowCount int    `json:"borrow_count"`
+	}
+
+	var results []BookBorrowCount
+
+	// Query to get most borrowed books for the specified month
+	query := `
+		SELECT 
+			b.book_id,
+			b.title,
+			b.picture,
+			COUNT(*) as borrow_count
+		FROM borrowed_books bb
+		JOIN books b ON bb.book_id = b.book_id
+		WHERE 
+			EXTRACT(MONTH FROM bb.borrow_date) = ?
+			AND EXTRACT(YEAR FROM bb.borrow_date) = ?
+		GROUP BY b.book_id, b.title, b.picture
+		ORDER BY borrow_count DESC
+		LIMIT 10
+	`
+
+	if err := middleware.DBConn.Raw(query, month, year).Scan(&results).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to fetch most borrowed books",
+			Data:    err.Error(),
+		})
+	}
+
+	// Format the month name
+	monthName := time.Month(month).String()
+
+	return c.JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: fmt.Sprintf("Most borrowed books for %s %d", monthName, year),
+		Data: fiber.Map{
+			"month": monthName,
+			"year":  year,
+			"books": results,
+		},
+	})
+}
+
+// GetMostBorrowedCategories returns the most borrowed book categories for a specific month and year
+func GetMostBorrowedCategories(c *fiber.Ctx) error {
+	// Get month and year from query params, default to current month if not provided
+	monthStr := c.Query("month")
+	yearStr := c.Query("year")
+
+	var month, year int
+	currentTime := time.Now()
+
+	if monthStr == "" || yearStr == "" {
+		month = int(currentTime.Month())
+		year = currentTime.Year()
+	} else {
+		var err error
+		month, err = strconv.Atoi(monthStr)
+		if err != nil || month < 1 || month > 12 {
+			return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+				RetCode: "400",
+				Message: "Invalid month. Must be between 1 and 12",
+				Data:    nil,
+			})
+		}
+
+		year, err = strconv.Atoi(yearStr)
+		if err != nil || year < 2000 || year > currentTime.Year() {
+			return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+				RetCode: "400",
+				Message: "Invalid year",
+				Data:    nil,
+			})
+		}
+	}
+
+	type BookDetail struct {
+		BookID      int    `json:"book_id"`
+		Title       string `json:"title"`
+		Picture     string `json:"picture"`
+		BorrowCount int    `json:"borrow_count"`
+	}
+
+	type CategoryStats struct {
+		Category    string       `json:"category"`
+		BorrowCount int          `json:"borrow_count"`
+		Books       []BookDetail `json:"books"`
+	}
+
+	type CategoryStatsDB struct {
+		Category    string          `json:"category"`
+		BorrowCount int             `json:"borrow_count"`
+		Books       json.RawMessage `json:"books"`
+	}
+
+	var resultsDB []CategoryStatsDB
+	var results []CategoryStats
+
+	// Query to get borrow counts by category
+	query := `
+		WITH BookCounts AS (
+			SELECT 
+				b.category,
+				b.book_id,
+				b.title,
+				b.picture,
+				COUNT(*) as book_borrow_count
+			FROM borrowed_books bb
+			JOIN books b ON bb.book_id = b.book_id
+			WHERE 
+				EXTRACT(MONTH FROM bb.borrow_date) = ?
+				AND EXTRACT(YEAR FROM bb.borrow_date) = ?
+			GROUP BY b.category, b.book_id, b.title, b.picture
+		),
+		RankedBooks AS (
+			SELECT 
+				category,
+				book_id,
+				title,
+				picture,
+				book_borrow_count,
+				ROW_NUMBER() OVER (PARTITION BY category ORDER BY book_borrow_count DESC) as rank
+			FROM BookCounts
+		),
+		CategoryTotals AS (
+			SELECT 
+				category,
+				SUM(book_borrow_count) as category_count,
+				json_agg(
+					json_build_object(
+						'book_id', book_id,
+						'title', title,
+						'picture', picture,
+						'borrow_count', book_borrow_count
+					)
+				) FILTER (WHERE rank <= 5) as top_books
+			FROM RankedBooks
+			GROUP BY category
+		)
+		SELECT 
+			category,
+			category_count as borrow_count,
+			top_books as books
+		FROM CategoryTotals
+		ORDER BY category_count DESC`
+
+	if err := middleware.DBConn.Raw(query, month, year).Scan(&resultsDB).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to fetch category statistics",
+			Data:    err.Error(),
+		})
+	}
+
+	// Convert the DB results to the final format
+	for _, r := range resultsDB {
+		var books []BookDetail
+		if err := json.Unmarshal(r.Books, &books); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+				RetCode: "500",
+				Message: "Failed to parse book details",
+				Data:    err.Error(),
+			})
+		}
+
+		results = append(results, CategoryStats{
+			Category:    r.Category,
+			BorrowCount: r.BorrowCount,
+			Books:       books,
+		})
+	}
+
+	// Format the month name
+	monthName := time.Month(month).String()
+
+	return c.JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: fmt.Sprintf("Most borrowed categories for %s %d", monthName, year),
+		Data: fiber.Map{
+			"month":      monthName,
+			"year":       year,
+			"categories": results,
+		},
+	})
+}

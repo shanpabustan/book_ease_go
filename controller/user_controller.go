@@ -252,6 +252,7 @@ func EditUser(c *fiber.Ctx) error {
 		UserID        string `json:"user_id"`
 		FirstName     string `json:"first_name"`
 		LastName      string `json:"last_name"`
+		Email         string `json:"email"`
 		MiddleName    string `json:"middle_name"`
 		Suffix        string `json:"suffix"`
 		ContactNumber string `json:"contact_number"`
@@ -281,6 +282,7 @@ func EditUser(c *fiber.Ctx) error {
 	user.UserID = request.UserID
 	user.FirstName = request.FirstName
 	user.LastName = request.LastName
+	user.Email = request.Email
 	user.MiddleName = &request.MiddleName
 	user.Suffix = &request.Suffix
 	user.ContactNumber = &request.ContactNumber

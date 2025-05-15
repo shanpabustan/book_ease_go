@@ -43,6 +43,8 @@ func AppRoutes(app *fiber.App) {
 	admin.Get("/count-borrowed-books", controller.CountBorrowedBooks)
 	admin.Get("/count-reservations", controller.CountReservations)
 	admin.Get("/count-overdue-books", controller.CountOverdueBooks)
+	admin.Get("/most-borrowed-books", controller.GetMostBorrowedBooks)
+	admin.Get("/most-borrowed-categories", controller.GetMostBorrowedCategories)
 	admin.Put("/disable-students", controller.DisableAllStudents)
 	admin.Put("/approve-reservation/:reservation_id", controller.ApproveReservation)
 	admin.Put("/cancel-reservation/:reservation_id", controller.DisapproveReservation)
@@ -61,5 +63,6 @@ func AppRoutes(app *fiber.App) {
 	app.Get("/test/fetch-notifs", controller.FetchNotifications)
 	app.Get("/notifications/unread", controller.FetchUnreadNotifications)
 	app.Put("/notifications/mark-as-read/:notification_id", controller.MarkNotificationAsRead)
+	app.Get("/test/admin-notification", controller.TestAdminNotification)
 
 }

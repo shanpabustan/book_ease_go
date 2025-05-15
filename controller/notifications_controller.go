@@ -1,9 +1,12 @@
 package controller
 
 import (
-	"book_ease_go/notifications"
-	"book_ease_go/model"
 	"book_ease_go/middleware"
+	"book_ease_go/model"
+	"book_ease_go/notifications"
+	"fmt"
+	"log"
+
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -100,3 +103,28 @@ func MarkNotificationAsRead(c *fiber.Ctx) error {
 	})
 }
 
+// TestAdminNotification will test sending a notification to all admins
+func TestAdminNotification(c *fiber.Ctx) error {
+	var admins []model.User
+	if err := middleware.DBConn.Debug().Where("user_type = ?", "Admin").Find(&admins).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": fmt.Sprintf("Failed to find admins: %v", err),
+		})
+	}
+
+	// Print found admins
+	log.Printf("Found %d admins", len(admins))
+	for _, admin := range admins {
+		log.Printf("Admin: ID=%s, Email=%s", admin.UserID, admin.Email)
+	}
+
+	// Try to send a test notification
+	testMsg := "This is a test notification for admins"
+	notifications.NotifyAllAdmins(middleware.DBConn, testMsg)
+
+	return c.JSON(fiber.Map{
+		"message":       "Test notification attempted",
+		"admins_found":  len(admins),
+		"admin_details": admins,
+	})
+}
