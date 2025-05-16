@@ -166,7 +166,8 @@ func LoginUser(c *fiber.Ctx) error {
 		        borrowed_books.user_id, 
 		        borrowed_books.book_id, 
 		        books.title, 
-		        books.picture, 
+		        books.picture,
+				books.year_published,
 		        borrowed_books.borrow_date, 
 		        borrowed_books.due_date`).
 		Joins("JOIN books ON borrowed_books.book_id = books.book_id").
@@ -454,17 +455,30 @@ func FetchBorrowedBooks(c *fiber.Ctx) error {
 		Picture        string    `json:"picture"`
 		Copies         int       `json:"copies"`
 		DueDate        time.Time `json:"due_date"`
-		Author         string    `json:"author"`          // New field
-		Year           string    `json:"year_published"`  // New field
-		ISBN           string    `json:"isbn"`            // New field
-		ShelfLocation  string    `json:"shelf_location"`  // New field
-		LibrarySection string    `json:"library_section"` // New field
-		Description    string    `json:"description"`     // New field
+		Author         string    `json:"author"`
+		YearPublished  string    `json:"year_published"` // Updated field name to match database
+		ISBN           string    `json:"isbn"`
+		ShelfLocation  string    `json:"shelf_location"`
+		LibrarySection string    `json:"library_section"`
+		Description    string    `json:"description"`
 	}
 
 	var books []BorrowedBookData
-	err := middleware.DBConn.Table("borrowed_books").
-		Select("books.book_id, books.title, books.picture, books.available_copies AS copies, borrowed_books.due_date, books.author, books.year_published, books.isbn, books.shelf_location, books.library_section, books.description").
+	err := middleware.DBConn.Debug(). // Added Debug() to see the SQL query
+						Table("borrowed_books").
+						Select(`
+			books.book_id, 
+			books.title, 
+			books.picture, 
+			books.available_copies AS copies, 
+			borrowed_books.due_date, 
+			books.author, 
+			books.year_published AS year_published, 
+			books.isbn, 
+			books.shelf_location, 
+			books.library_section, 
+			books.description
+		`).
 		Joins("JOIN books ON books.book_id = borrowed_books.book_id").
 		Where("borrowed_books.user_id = ? AND borrowed_books.status = ?", userID, "Pending").
 		Scan(&books).Error
