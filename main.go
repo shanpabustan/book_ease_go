@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
-	
-	
+
+	"book_ease_go/controller"
 	"book_ease_go/middleware"
 	"book_ease_go/model"
 	"book_ease_go/notifications"
 	"book_ease_go/routes"
-	"book_ease_go/controller"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -30,7 +30,6 @@ func init() {
 	middleware.DBConn.AutoMigrate(&model.Notification{})
 	middleware.DBConn.AutoMigrate(&model.Setting{})
 
-	
 }
 
 func main() {
@@ -43,7 +42,6 @@ func main() {
 		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
 		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 	}))
-	
 
 	// ✅ Define API Routes AFTER CORS
 	routes.AppRoutes(app)
@@ -54,16 +52,15 @@ func main() {
 	middleware.StartOverdueScheduler()
 
 	go controller.StartPenaltyChecker()
-	
+
 	notifications.StartOverdueCheckerCron()
 	notifications.InitializeEmailConfig()
 	if err := notifications.TestEmailConfig(); err != nil {
-		fmt.Println("❌ Email configuration error:, err")
+		fmt.Printf("❌ Email configuration error: %v\n", err)
+		// Don't exit, but log the error
 	} else {
 		fmt.Println("✅ Email configuration is working!")
 	}
-
-	
 
 	// Start the server
 	app.Listen(fmt.Sprintf("0.0.0.0:%s", middleware.GetEnv("PROJ_PORT")))

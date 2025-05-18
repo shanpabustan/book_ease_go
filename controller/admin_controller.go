@@ -478,9 +478,12 @@ func ApproveReservation(c *fiber.Ctx) error {
 		})
 	}
 
-	// Send notification for the approved reservation
+	// Send notifications
 	go func() {
+		// Notify user about approved reservation
 		notifications.NotifyApprovedReservation(middleware.DBConn, user, book)
+		// Notify all admins about the approval
+		notifications.NotifyAllAdmins(middleware.DBConn, fmt.Sprintf("Reservation for book '%s' by %s %s has been approved", book.Title, user.FirstName, user.LastName))
 	}()
 
 	return c.JSON(response.ResponseModel{
@@ -676,7 +679,7 @@ func GetAllReservations(c *fiber.Ctx) error {
 
 	// Ensure preloads are valid: User.UserID is string
 	err := middleware.DBConn.
-		//Where("Status = ?", "Pending").
+		Where("Status = ?", "Pending").
 		Preload("User").
 		Preload("Book").
 		Find(&reservations).Error
@@ -839,6 +842,9 @@ func checkAndBlockUsers() {
 		return
 	}
 
+	// First, mark any overdue books using the centralized function
+	middleware.MarkOverdueBooks()
+
 	for _, user := range users {
 		var borrowedBooks []model.BorrowedBook
 
@@ -848,20 +854,6 @@ func checkAndBlockUsers() {
 			Find(&borrowedBooks).Error; err != nil {
 			fmt.Println("Error fetching borrowed books for user", user.UserID, ":", err)
 			continue
-		}
-
-		// Automatically mark overdue books
-		for i, book := range borrowedBooks {
-			if book.Status != "Returned" && book.ReturnDate == nil && time.Now().After(book.DueDate) {
-				borrowedBooks[i].Status = "Overdue"
-				err := middleware.DBConn.Model(&model.BorrowedBook{}).
-					Where("borrow_id = ?", book.BorrowID).
-					Update("status", "Overdue").Error
-				if err != nil {
-					fmt.Println("Failed to update status for book", book.BorrowID, ":", err)
-					continue
-				}
-			}
 		}
 
 		// Count how many books are currently overdue and not yet returned
@@ -1390,6 +1382,42 @@ func GetMostBorrowedCategories(c *fiber.Ctx) error {
 			"month":      monthName,
 			"year":       year,
 			"categories": results,
+		},
+	})
+}
+
+// TestEmailSending tests the email sending functionality
+func TestEmailSending(c *fiber.Ctx) error {
+	// Get test email from query parameter or use a default
+	testEmail := c.Query("email", "shanpabustan66@gmail.com")
+
+	// Create a test email
+	subject := "Test Email from Book Ease"
+	body := `
+		<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
+			<h2 style="color: #008080;">Test Email</h2>
+			<p>This is a test email from Book Ease system.</p>
+			<p>If you're receiving this, the email system is working correctly!</p>
+			<hr style="border: 1px solid #008080;">
+			<p style="color: #666; font-size: 12px;">This is an automated message, please do not reply.</p>
+		</div>
+	`
+
+	// Send the test email
+	err := notifications.SendEmail(testEmail, subject, body)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to send test email",
+			Data:    err.Error(),
+		})
+	}
+
+	return c.JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "Test email sent successfully",
+		Data: fiber.Map{
+			"email": testEmail,
 		},
 	})
 }

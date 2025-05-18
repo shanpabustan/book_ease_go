@@ -404,7 +404,13 @@ func ReserveBook(c *fiber.Ctx) error {
 		})
 	}
 
-	notifications.NotifyPendingReservation(middleware.DBConn, user, book)
+	// Send notifications
+	go func() {
+		// Notify user about pending reservation
+		notifications.NotifyPendingReservation(middleware.DBConn, user, book)
+		// Notify admins about new reservation request
+		notifications.NotifyAdminReservationRequest(middleware.DBConn, user, book)
+	}()
 
 	return c.JSON(response.ResponseModel{
 		RetCode: "201",
