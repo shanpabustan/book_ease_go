@@ -419,6 +419,7 @@ func ReserveBook(c *fiber.Ctx) error {
 	})
 }
 
+
 //FETCHING SECTION
 
 // will base on the most borrowed books by the users
@@ -516,34 +517,126 @@ func FetchBorrowedBooksByStatus(c *fiber.Ctx) error {
 		})
 	}
 
-	if status == "" {
-		return c.JSON(response.ResponseModel{
-			RetCode: "400",
-			Message: "Status is required",
-			Data:    nil,
-		})
+	type BookData struct {
+		BookID        int       `json:"book_id"`
+		Title         string    `json:"title"`
+		Picture       string    `json:"picture"`
+		BorrowDate    time.Time `json:"borrow_date"`
+		DueDate       time.Time `json:"due_date"`
+		Status        string    `json:"status"`
+		Source        string    `json:"source"`
+		ReservationID int       `json:"reservation_id,omitempty"`
 	}
 
-	type BorrowedBookData struct {
-		BookID     int       `json:"book_id"`
-		Title      string    `json:"title"`
-		Picture    string    `json:"picture"`
-		BorrowDate time.Time `json:"borrow_date"`
-		DueDate    time.Time `json:"due_date"`
-		Status     string    `json:"status"`
+	var books []BookData
+
+	var query *gorm.DB
+	if status == "" || status == "All" {
+		// Query for all statuses
+		query = middleware.DBConn.Raw(`
+			(SELECT 
+				books.book_id,
+				books.title,
+				books.picture,
+				borrowed_books.borrow_date,
+				borrowed_books.due_date,
+				CASE 
+					WHEN borrowed_books.status = 'Pending' THEN 'To Return'
+					WHEN borrowed_books.status = 'Cancelled' THEN 'Cancelled'
+					WHEN borrowed_books.status = 'Returned' THEN 'Returned'
+					ELSE borrowed_books.status 
+				END as status,
+				'borrowed' as source,
+				NULL as reservation_id
+			FROM borrowed_books
+			JOIN books ON books.book_id = borrowed_books.book_id
+			WHERE borrowed_books.user_id = ?)
+			
+			UNION ALL
+			
+			(SELECT 
+				books.book_id,
+				books.title,
+				books.picture,
+				reservations.created_at as borrow_date,
+				reservations.preferred_pickup_date as due_date,
+				CASE 
+					WHEN reservations.status = 'Pending' THEN 'To Pick Up'
+					WHEN reservations.status = 'Cancelled' THEN 'Cancelled'
+					WHEN reservations.status = 'Picked Up' THEN 'Picked Up'
+					ELSE reservations.status 
+				END as status,
+				'reservation' as source,
+				reservations.reservation_id
+			FROM reservations
+			JOIN books ON books.book_id = reservations.book_id
+			WHERE reservations.user_id = ? AND reservations.status != 'Approved')
+			
+			ORDER BY borrow_date DESC
+		`, userID, userID)
+	} else {
+		// Handle specific status mapping
+		var borrowedStatus, reservationStatus string
+
+		switch status {
+		case "To Return":
+			borrowedStatus = "Pending"
+			reservationStatus = "none" // Won't match any reservation
+		case "To Pick Up":
+			borrowedStatus = "none" // Won't match any borrowed book
+			reservationStatus = "Pending"
+		default:
+			borrowedStatus = status
+			reservationStatus = status
+		}
+
+		query = middleware.DBConn.Raw(`
+			(SELECT 
+				books.book_id,
+				books.title,
+				books.picture,
+				borrowed_books.borrow_date,
+				borrowed_books.due_date,
+				CASE 
+					WHEN borrowed_books.status = 'Pending' THEN 'To Return'
+					WHEN borrowed_books.status = 'Cancelled' THEN 'Cancelled'
+					WHEN borrowed_books.status = 'Returned' THEN 'Returned'
+					ELSE borrowed_books.status 
+				END as status,
+				'borrowed' as source,
+				NULL as reservation_id
+			FROM borrowed_books
+			JOIN books ON books.book_id = borrowed_books.book_id
+			WHERE borrowed_books.user_id = ? AND borrowed_books.status = ?)
+			
+			UNION ALL
+			
+			(SELECT 
+				books.book_id,
+				books.title,
+				books.picture,
+				reservations.created_at as borrow_date,
+				reservations.preferred_pickup_date as due_date,
+				CASE 
+					WHEN reservations.status = 'Pending' THEN 'To Pick Up'
+					WHEN reservations.status = 'Cancelled' THEN 'Cancelled'
+					WHEN reservations.status = 'Picked Up' THEN 'Picked Up'
+					ELSE reservations.status 
+				END as status,
+				'reservation' as source,
+				reservations.reservation_id
+			FROM reservations
+			JOIN books ON books.book_id = reservations.book_id
+			WHERE reservations.user_id = ? AND reservations.status = ? AND reservations.status != 'Approved')
+			
+			ORDER BY borrow_date DESC
+		`, userID, borrowedStatus, userID, reservationStatus)
 	}
 
-	var books []BorrowedBookData
-	err := middleware.DBConn.Table("borrowed_books").
-		Select("books.book_id, books.title, books.picture, borrowed_books.borrow_date, borrowed_books.due_date, borrowed_books.status").
-		Joins("JOIN books ON books.book_id = borrowed_books.book_id").
-		Where("borrowed_books.user_id = ? AND borrowed_books.status = ?", userID, status).
-		Scan(&books).Error
-
-	if err != nil {
+	if err := query.Scan(&books).Error; err != nil {
 		return c.JSON(response.ResponseModel{
 			RetCode: "500",
-			Message: "Failed to fetch borrowed books",
+			Message: "Failed to fetch books and reservations",
 			Data:    err.Error(),
 		})
 	}
@@ -555,9 +648,14 @@ func FetchBorrowedBooksByStatus(c *fiber.Ctx) error {
 		}
 	}
 
+	message := "Books and Reservations Fetched Successfully"
+	if status != "" && status != "all" {
+		message = fmt.Sprintf("Books and Reservations with status '%s' Fetched Successfully", status)
+	}
+
 	return c.JSON(response.ResponseModel{
 		RetCode: "200",
-		Message: "Borrowed Books Fetched Successfully",
+		Message: message,
 		Data:    books,
 	})
 }
@@ -661,5 +759,78 @@ func ChangePassword(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
 		RetCode: "200",
 		Message: "Password updated successfully",
+	})
+}
+
+func FetchBooksAllStatus(c *fiber.Ctx) error {
+	userID := c.Query("user_id")
+
+	if userID == "" {
+		return c.JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "User ID is required",
+			Data:    nil,
+		})
+	}
+
+	type BookData struct {
+		BookID     int       `json:"book_id"`
+		Title      string    `json:"title"`
+		Picture    string    `json:"picture"`
+		BorrowDate time.Time `json:"borrow_date"`
+		DueDate    time.Time `json:"due_date"`
+		Status     string    `json:"status"`
+	}
+
+	var books []BookData
+
+	// Create the union query without status filter
+	query := middleware.DBConn.Raw(`
+		(SELECT 
+			books.book_id,
+			books.title,
+			books.picture,
+			borrowed_books.borrow_date,
+			borrowed_books.due_date,
+			borrowed_books.status
+		FROM borrowed_books
+		JOIN books ON books.book_id = borrowed_books.book_id
+		WHERE borrowed_books.user_id = ?)
+		
+		UNION ALL
+		
+		(SELECT 
+			books.book_id,
+			books.title,
+			books.picture,
+			reservations.created_at as borrow_date,
+			reservations.preferred_pickup_date as due_date,
+			reservations.status
+		FROM reservations
+		JOIN books ON books.book_id = reservations.book_id
+		WHERE reservations.user_id = ?)
+		
+		ORDER BY borrow_date DESC
+	`, userID, userID)
+
+	if err := query.Scan(&books).Error; err != nil {
+		return c.JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to fetch books and reservations",
+			Data:    err.Error(),
+		})
+	}
+
+	// Add base64 prefix to picture if it exists
+	for i := range books {
+		if books[i].Picture != "" {
+			books[i].Picture = "data:image/jpeg;base64," + books[i].Picture
+		}
+	}
+
+	return c.JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "All Books and Reservations Fetched Successfully",
+		Data:    books,
 	})
 }

@@ -30,6 +30,7 @@ func AppRoutes(app *fiber.App) {
 	//Reserve Book - Student
 	reserve := app.Group("/reserve")
 	reserve.Post("/reserve-book", controller.ReserveBook)
+	//reserve.Post("/cancel-reservation", controller.CancelReservation)
 
 	//admin and student fetch of books.
 	app.Get("/get-all", controller.FetchAllBooks)
@@ -58,7 +59,7 @@ func AppRoutes(app *fiber.App) {
 	admin.Post("/edit-admin", controller.EditAdminUser)
 	admin.Get("/get-borrowed-books", controller.GetAllBorrowedBooks)
 	admin.Put("/unblock-student/:userID", controller.UnblockUser)
-	admin.Get("/test-email", controller.TestEmailSending)
+	//admin.Get("/test-email", controller.TestEmailSending)
 
 	app.Get("/test/fetch-notifs", controller.FetchNotifications)
 	app.Get("/notifications/unread", controller.FetchUnreadNotifications)

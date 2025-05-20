@@ -1387,37 +1387,37 @@ func GetMostBorrowedCategories(c *fiber.Ctx) error {
 }
 
 // TestEmailSending tests the email sending functionality
-func TestEmailSending(c *fiber.Ctx) error {
-	// Get test email from query parameter or use a default
-	testEmail := c.Query("email", "shanpabustan66@gmail.com")
+// func TestEmailSending(c *fiber.Ctx) error {
+// 	// Get test email from query parameter or use a default
+// 	testEmail := c.Query("email", "shanpabustan66@gmail.com")
 
-	// Create a test email
-	subject := "Test Email from Book Ease"
-	body := `
-		<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
-			<h2 style="color: #008080;">Test Email</h2>
-			<p>This is a test email from Book Ease system.</p>
-			<p>If you're receiving this, the email system is working correctly!</p>
-			<hr style="border: 1px solid #008080;">
-			<p style="color: #666; font-size: 12px;">This is an automated message, please do not reply.</p>
-		</div>
-	`
+// 	// Create a test email
+// 	subject := "Test Email from Book Ease"
+// 	body := `
+// 		<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
+// 			<h2 style="color: #008080;">Test Email</h2>
+// 			<p>This is a test email from Book Ease system.</p>
+// 			<p>If you're receiving this, the email system is working correctly!</p>
+// 			<hr style="border: 1px solid #008080;">
+// 			<p style="color: #666; font-size: 12px;">This is an automated message, please do not reply.</p>
+// 		</div>
+// 	`
 
-	// Send the test email
-	err := notifications.SendEmail(testEmail, subject, body)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-			RetCode: "500",
-			Message: "Failed to send test email",
-			Data:    err.Error(),
-		})
-	}
+// 	// Send the test email
+// 	err := notifications.SendEmail(testEmail, subject, body)
+// 	if err != nil {
+// 		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+// 			RetCode: "500",
+// 			Message: "Failed to send test email",
+// 			Data:    err.Error(),
+// 		})
+// 	}
 
-	return c.JSON(response.ResponseModel{
-		RetCode: "200",
-		Message: "Test email sent successfully",
-		Data: fiber.Map{
-			"email": testEmail,
-		},
-	})
-}
+// 	return c.JSON(response.ResponseModel{
+// 		RetCode: "200",
+// 		Message: "Test email sent successfully",
+// 		Data: fiber.Map{
+// 			"email": testEmail,
+// 		},
+// 	})
+// }

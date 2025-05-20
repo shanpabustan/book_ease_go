@@ -124,6 +124,11 @@ func NotifyAccountBlocked(db *gorm.DB, user model.User) {
 	SendNotification(db, user.UserID, msg)
 }
 
+func NotifyReservationCancelled(db *gorm.DB, user model.User, book model.Book) {
+	msg := fmt.Sprintf(`Your reservation for "%s" has been cancelled.`, book.Title)
+	SendNotification(db, user.UserID, msg)
+}
+
 // ========================= ADMIN NOTIFICATIONS =========================
 
 func NotifyAdminReservationRequest(db *gorm.DB, user model.User, book model.Book) {
@@ -140,6 +145,12 @@ func NotifyAdminNewUser(db *gorm.DB, user model.User) {
 	msg := fmt.Sprintf(`A new user, %s %s, has registered.`, user.FirstName, user.LastName)
 	NotifyAllAdmins(db, msg)
 }
+
+func NotifyAdminReservationCancelled(db *gorm.DB, user model.User, book model.Book) {
+	msg := fmt.Sprintf(`%s %s has cancelled their reservation for "%s".`, user.FirstName, user.LastName, book.Title)
+	NotifyAllAdmins(db, msg)
+}
+
 
 // ========================= CRON JOB =========================
 
