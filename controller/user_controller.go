@@ -374,7 +374,7 @@ func ReserveBook(c *fiber.Ctx) error {
 	}
 
 	middleware.DBConn.
-		Where("status = ? AND expiry < ?", "Pending", time.Now()).
+		Where("status = ? AND expired_at < ?", "Pending", time.Now()).
 		Delete(&model.Reservation{})
 
 	reservation.ReservationID = int(time.Now().UnixNano() % 10000)
@@ -422,26 +422,109 @@ func ReserveBook(c *fiber.Ctx) error {
 
 //FETCHING SECTION
 
-// will base on the most borrowed books by the users
+// CourseToCategories maps courses to relevant book categories
+var CourseToCategories = map[string][]string{
+	"BS Computer Science":       {"Computer Science", "Information System", "Science & Technology", "Textbooks"},
+	"BS Information Technology": {"Information System", "Computer Science", "Science & Technology", "Textbooks"},
+	"BS Business Administration": {"Business Administration", "Textbooks", "Reference Materials"},
+	"BS Engineering":            {"Engineering", "Science & Technology", "Textbooks"},
+	"BS Education":              {"Education", "Textbooks", "Reference Materials"},
+	"BS Accountancy":            {"Accountancy", "Business Administration", "Textbooks"},
+	"BS Psychology":             {"Psychology", "Non-Fiction", "Textbooks"},
+	"BS Nursing":                {"Nursing", "Biology", "Science & Technology", "Textbooks"},
+	"BS Criminology":            {"Criminology", "History & Social Studies", "Textbooks"},
+	"BS Hospitality Management":  {"Hospitality Management", "Business Administration", "Textbooks"},
+	"BS Tourism Management":     {"Tourism Management", "Business Administration", "Textbooks"},
+	"BS Architecture":           {"Architecture", "Engineering", "Textbooks"},
+	"BS Civil Engineering":      {"Civil Engineering", "Engineering", "Textbooks"},
+	"BS Mechanical Engineering": {"Mechanical Engineering", "Engineering", "Textbooks"},
+	"BS Electrical Engineering": {"Electrical Engineering", "Engineering", "Textbooks"},
+	"BS Electronics Engineering": {"Electronics Engineering", "Engineering", "Textbooks"},
+	"BS Pharmacy":               {"Pharmacy", "Biology", "Science & Technology", "Textbooks"},
+	"BS Biology":                {"Biology", "Science & Technology", "Textbooks"},
+	"BS Mathematics":            {"Mathematics", "Textbooks"},
+	"BS Environmental Science":  {"Environmental Science", "Biology", "Science & Technology", "Textbooks"},
+	"AB Communication":          {"Communication", "Non-Fiction", "Textbooks"},
+	"AB Political Science":      {"Political Science", "History & Social Studies", "Textbooks"},
+	"AB English":                {"English", "Fiction", "Non-Fiction", "Textbooks"},
+	"AB History":                {"History", "History & Social Studies", "Biographies", "Textbooks"},
+}
+
+// FetchRecommendedBooks retrieves books based on the user's course
 func FetchRecommendedBooks(c *fiber.Ctx) error {
+	// Get user_id from query parameter
 	userID := c.Query("user_id")
-
-	var books []model.Book
-	bookfetch := middleware.DBConn.Debug().Table("books").
-		Where("is_recommended = ? AND user_id = ?", true, userID)
-
-	if err := bookfetch.Find(&books).Error; err != nil {
-		return c.JSON(response.ResponseModel{
-			RetCode: "500",
-			Message: "Failed to Fetch Recommended Books",
-			Data:    err.Error(),
+	if userID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"RetCode": "400",
+			"Message": "User ID is required",
+			"Error":   "user_id query parameter is missing",
 		})
 	}
 
-	return c.JSON(response.ResponseModel{
-		RetCode: "200",
-		Message: "Recommended Books Fetched Successfully",
-		Data:    books,
+	// Fetch user to get their Program
+	var user model.User
+	if err := middleware.DBConn.Where("user_id = ? AND is_active = ?", userID, true).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"RetCode": "404",
+				"Message": "User not found or inactive",
+				"Error":   err.Error(),
+			})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"RetCode": "500",
+			"Message": "Failed to fetch user",
+			"Error":   err.Error(),
+		})
+	}
+
+	// Check if user has a Program
+	if user.Program == nil || *user.Program == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"RetCode": "400",
+			"Message": "User has no associated program",
+			"Error":   "Program field is empty",
+		})
+	}
+
+	// Get categories for the user's program
+	categories, exists := CourseToCategories[*user.Program]
+	if !exists {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"RetCode": "400",
+			"Message": "No recommendations available for this program",
+			"Error":   "Program not found in category mapping",
+		})
+	}
+
+	// Fetch books matching the categories
+	var books []model.Book
+	if err := middleware.DBConn.Where("category IN ?", categories).
+		Where("available_copies > ?", 0).
+		// Select("book_id", "title", "author", "category", "isbn", "available_copies", "picture").
+		Find(&books).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"RetCode": "500",
+			"Message": "Failed to fetch recommended books",
+			"Error":   err.Error(),
+		})
+	}
+
+	// Return empty list if no books found
+	if len(books) == 0 {
+		return c.JSON(fiber.Map{
+			"RetCode": "200",
+			"Message": "No recommended books found for your program",
+			"Data":    []model.Book{},
+		})
+	}
+
+	// Return recommended books
+	return c.JSON(fiber.Map{
+		"RetCode": "200",
+		"Message": "Recommended books retrieved successfully",
+		"Data":    books,
 	})
 }
 
@@ -559,7 +642,7 @@ func FetchBorrowedBooksByStatus(c *fiber.Ctx) error {
 				books.title,
 				books.picture,
 				reservations.created_at as borrow_date,
-				reservations.preferred_pickup_date as due_date,
+    			reservations.expired_at as due_date,  
 				CASE 
 					WHEN reservations.status = 'Pending' THEN 'To Pick Up'
 					WHEN reservations.status = 'Cancelled' THEN 'Cancelled'
@@ -616,7 +699,7 @@ func FetchBorrowedBooksByStatus(c *fiber.Ctx) error {
 				books.title,
 				books.picture,
 				reservations.created_at as borrow_date,
-				reservations.preferred_pickup_date as due_date,
+				reservations.expired_at as due_date,
 				CASE 
 					WHEN reservations.status = 'Pending' THEN 'To Pick Up'
 					WHEN reservations.status = 'Cancelled' THEN 'Cancelled'

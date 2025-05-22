@@ -27,6 +27,7 @@ func AppRoutes(app *fiber.App) {
 	stud.Post("/add-pic", controller.UpdateAvatar)
 	stud.Get("/get-books-status", controller.FetchBorrowedBooksByStatus)
 	stud.Patch("/reset-password", controller.ResetPassword)
+	stud.Get("/get-recommended",controller.FetchRecommendedBooks)
 
 	//Reserve Book - Student
 	reserve := app.Group("/reserve")
