@@ -834,3 +834,60 @@ func FetchBooksAllStatus(c *fiber.Ctx) error {
 		Data:    books,
 	})
 }
+
+// ResetPassword resets a user's password directly
+func ResetPassword(c *fiber.Ctx) error {
+	var request struct {
+		UserID      string `json:"user_id"`
+		NewPassword string `json:"new_password"`
+	}
+
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Invalid request body",
+			Data:    err.Error(),
+		})
+	}
+
+	// Validate request fields
+	if request.UserID == "" || request.NewPassword == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "User ID and new password are required",
+		})
+	}
+
+	// Find user in database
+	var user model.User
+	if err := middleware.DBConn.Table("users").Where("user_id = ?", request.UserID).First(&user).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
+			RetCode: "404",
+			Message: "User not found",
+		})
+	}
+
+	// Hash new password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(request.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to hash new password",
+			Data:    err.Error(),
+		})
+	}
+
+	// Update password in database
+	if err := middleware.DBConn.Table("users").Where("user_id = ?", request.UserID).Update("password", string(hashedPassword)).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to update password",
+			Data:    err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "Password reset successful",
+	})
+}
