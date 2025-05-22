@@ -27,7 +27,8 @@ func AppRoutes(app *fiber.App) {
 	stud.Post("/add-pic", controller.UpdateAvatar)
 	stud.Get("/get-books-status", controller.FetchBorrowedBooksByStatus)
 	stud.Patch("/reset-password", controller.ResetPassword)
-	stud.Get("/get-recommended",controller.FetchRecommendedBooks)
+	stud.Get("/get-recommended", controller.FetchRecommendedBooks)
+	stud.Get("/popular-books", controller.FetchMostPopularBooks)
 
 	//Reserve Book - Student
 	reserve := app.Group("/reserve")
@@ -48,6 +49,7 @@ func AppRoutes(app *fiber.App) {
 	admin.Get("/count-overdue-books", controller.CountOverdueBooks)
 	admin.Get("/most-borrowed-books", controller.GetMostBorrowedBooks)
 	admin.Get("/most-borrowed-categories", controller.GetMostBorrowedCategories)
+	
 	admin.Put("/disable-students", controller.DisableAllStudents)
 	admin.Put("/approve-reservation/:reservation_id", controller.ApproveReservation)
 	admin.Put("/cancel-reservation/:reservation_id", controller.DisapproveReservation)

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 
 	"time"
 
@@ -538,7 +539,7 @@ func FetchBorrowedBooks(c *fiber.Ctx) error {
 		})
 	}
 
-	// Updated BorrowedBookData struct to include additional fields
+
 	type BorrowedBookData struct {
 		BookID         int       `json:"book_id"`
 		Title          string    `json:"title"`
@@ -587,6 +588,11 @@ func FetchBorrowedBooks(c *fiber.Ctx) error {
 		Data:    books,
 	})
 }
+
+
+
+
+
 
 func FetchBorrowedBooksByStatus(c *fiber.Ctx) error {
 	userID := c.Query("user_id")
@@ -915,6 +921,66 @@ func FetchBooksAllStatus(c *fiber.Ctx) error {
 		RetCode: "200",
 		Message: "All Books and Reservations Fetched Successfully",
 		Data:    books,
+	})
+}
+
+// FetchMostPopularBooks returns the most popular books based on borrow count
+func FetchMostPopularBooks(c *fiber.Ctx) error {
+	// Get limit from query parameter, default to 10 if not provided
+	limitStr := c.Query("limit", "10")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = 10
+	}
+
+	type PopularBook struct {
+		BookID          int    `json:"book_id"`
+		Title           string `json:"title"`
+		Author          string `json:"author"`
+		Category        string `json:"category"`
+		Picture         string `json:"picture"`
+		BorrowCount     int    `json:"borrow_count"`
+		AvailableCopies int    `json:"available_copies"`
+	}
+
+	var popularBooks []PopularBook
+
+	// Query to get most borrowed books with their details
+	query := `
+		SELECT 
+			b.book_id,
+			b.title,
+			b.author,
+			b.category,
+			b.picture,
+			b.available_copies,
+			COUNT(bb.borrow_id) as borrow_count
+		FROM books b
+		LEFT JOIN borrowed_books bb ON b.book_id = bb.book_id
+		GROUP BY b.book_id, b.title, b.author, b.category, b.picture, b.available_copies
+		ORDER BY borrow_count DESC
+		LIMIT ?
+	`
+
+	if err := middleware.DBConn.Raw(query, limit).Scan(&popularBooks).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to fetch popular books",
+			Data:    err.Error(),
+		})
+	}
+
+	// Add base64 prefix to picture if it exists
+	for i := range popularBooks {
+		if popularBooks[i].Picture != "" {
+			popularBooks[i].Picture = "data:image/jpeg;base64," + popularBooks[i].Picture
+		}
+	}
+
+	return c.JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "Most popular books fetched successfully",
+		Data:    popularBooks,
 	})
 }
 

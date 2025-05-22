@@ -1421,3 +1421,54 @@ func GetMostBorrowedCategories(c *fiber.Ctx) error {
 // 		},
 // 	})
 // }
+
+// CheckExpiredReservations checks for reservations that have expired and updates their status
+func CheckExpiredReservations() {
+	// Get all pending reservations that have expired
+	var expiredReservations []model.Reservation
+	if err := middleware.DBConn.
+		Where("status = ? AND expired_at < ?", "Pending", time.Now()).
+		Find(&expiredReservations).Error; err != nil {
+		fmt.Printf("Error fetching expired reservations: %v\n", err)
+		return
+	}
+
+	// Update status to Expired and send notifications
+	for _, reservation := range expiredReservations {
+		// Update status
+		if err := middleware.DBConn.Model(&reservation).Update("status", "Expired").Error; err != nil {
+			fmt.Printf("Error updating reservation %d: %v\n", reservation.ReservationID, err)
+			continue
+		}
+
+		// Get user and book details for notification
+		var user model.User
+		var book model.Book
+		if err := middleware.DBConn.First(&user, "user_id = ?", reservation.UserID).Error; err != nil {
+			fmt.Printf("Error fetching user for reservation %d: %v\n", reservation.ReservationID, err)
+			continue
+		}
+		if err := middleware.DBConn.First(&book, "book_id = ?", reservation.BookID).Error; err != nil {
+			fmt.Printf("Error fetching book for reservation %d: %v\n", reservation.ReservationID, err)
+			continue
+		}
+
+		// Send notification
+		go notifications.NotifyReservationExpired(middleware.DBConn, user, book)
+	}
+}
+
+// StartReservationChecker will start a background task that checks for expired reservations every minute
+func StartReservationChecker() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			CheckExpiredReservations()
+		}
+	}
+}
+
+

@@ -52,6 +52,7 @@ func main() {
 	middleware.StartOverdueScheduler()
 
 	go controller.StartPenaltyChecker()
+	go controller.StartReservationChecker()
 
 	notifications.StartOverdueCheckerCron()
 	notifications.InitializeEmailConfig()

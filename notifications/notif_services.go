@@ -129,6 +129,11 @@ func NotifyReservationCancelled(db *gorm.DB, user model.User, book model.Book) {
 	SendNotification(db, user.UserID, msg)
 }
 
+func NotifyReservationExpired(db *gorm.DB, user model.User, book model.Book) {
+	msg := fmt.Sprintf(`Your reservation for "%s" has expired because it was not picked up within 24 hours of the preferred pickup date.`, book.Title)
+	SendNotification(db, user.UserID, msg)
+}
+
 // ========================= ADMIN NOTIFICATIONS =========================
 
 func NotifyAdminReservationRequest(db *gorm.DB, user model.User, book model.Book) {
@@ -150,7 +155,6 @@ func NotifyAdminReservationCancelled(db *gorm.DB, user model.User, book model.Bo
 	msg := fmt.Sprintf(`%s %s has cancelled their reservation for "%s".`, user.FirstName, user.LastName, book.Title)
 	NotifyAllAdmins(db, msg)
 }
-
 
 // ========================= CRON JOB =========================
 
