@@ -420,35 +420,34 @@ func ReserveBook(c *fiber.Ctx) error {
 	})
 }
 
-
 //FETCHING SECTION
 
 // CourseToCategories maps courses to relevant book categories
 var CourseToCategories = map[string][]string{
-	"BS Computer Science":       {"Computer Science", "Information System", "Science & Technology", "Textbooks"},
-	"BS Information Technology": {"Information System", "Computer Science", "Science & Technology", "Textbooks"},
+	"BS Computer Science":        {"Computer Science", "Information System", "Science & Technology", "Textbooks"},
+	"BS Information Technology":  {"Information System", "Computer Science", "Science & Technology", "Textbooks"},
 	"BS Business Administration": {"Business Administration", "Textbooks", "Reference Materials"},
-	"BS Engineering":            {"Engineering", "Science & Technology", "Textbooks"},
-	"BS Education":              {"Education", "Textbooks", "Reference Materials"},
-	"BS Accountancy":            {"Accountancy", "Business Administration", "Textbooks"},
-	"BS Psychology":             {"Psychology", "Non-Fiction", "Textbooks"},
-	"BS Nursing":                {"Nursing", "Biology", "Science & Technology", "Textbooks"},
-	"BS Criminology":            {"Criminology", "History & Social Studies", "Textbooks"},
+	"BS Engineering":             {"Engineering", "Science & Technology", "Textbooks"},
+	"BS Education":               {"Education", "Textbooks", "Reference Materials"},
+	"BS Accountancy":             {"Accountancy", "Business Administration", "Textbooks"},
+	"BS Psychology":              {"Psychology", "Non-Fiction", "Textbooks"},
+	"BS Nursing":                 {"Nursing", "Biology", "Science & Technology", "Textbooks"},
+	"BS Criminology":             {"Criminology", "History & Social Studies", "Textbooks"},
 	"BS Hospitality Management":  {"Hospitality Management", "Business Administration", "Textbooks"},
-	"BS Tourism Management":     {"Tourism Management", "Business Administration", "Textbooks"},
-	"BS Architecture":           {"Architecture", "Engineering", "Textbooks"},
-	"BS Civil Engineering":      {"Civil Engineering", "Engineering", "Textbooks"},
-	"BS Mechanical Engineering": {"Mechanical Engineering", "Engineering", "Textbooks"},
-	"BS Electrical Engineering": {"Electrical Engineering", "Engineering", "Textbooks"},
+	"BS Tourism Management":      {"Tourism Management", "Business Administration", "Textbooks"},
+	"BS Architecture":            {"Architecture", "Engineering", "Textbooks"},
+	"BS Civil Engineering":       {"Civil Engineering", "Engineering", "Textbooks"},
+	"BS Mechanical Engineering":  {"Mechanical Engineering", "Engineering", "Textbooks"},
+	"BS Electrical Engineering":  {"Electrical Engineering", "Engineering", "Textbooks"},
 	"BS Electronics Engineering": {"Electronics Engineering", "Engineering", "Textbooks"},
-	"BS Pharmacy":               {"Pharmacy", "Biology", "Science & Technology", "Textbooks"},
-	"BS Biology":                {"Biology", "Science & Technology", "Textbooks"},
-	"BS Mathematics":            {"Mathematics", "Textbooks"},
-	"BS Environmental Science":  {"Environmental Science", "Biology", "Science & Technology", "Textbooks"},
-	"AB Communication":          {"Communication", "Non-Fiction", "Textbooks"},
-	"AB Political Science":      {"Political Science", "History & Social Studies", "Textbooks"},
-	"AB English":                {"English", "Fiction", "Non-Fiction", "Textbooks"},
-	"AB History":                {"History", "History & Social Studies", "Biographies", "Textbooks"},
+	"BS Pharmacy":                {"Pharmacy", "Biology", "Science & Technology", "Textbooks"},
+	"BS Biology":                 {"Biology", "Science & Technology", "Textbooks"},
+	"BS Mathematics":             {"Mathematics", "Textbooks"},
+	"BS Environmental Science":   {"Environmental Science", "Biology", "Science & Technology", "Textbooks"},
+	"AB Communication":           {"Communication", "Non-Fiction", "Textbooks"},
+	"AB Political Science":       {"Political Science", "History & Social Studies", "Textbooks"},
+	"AB English":                 {"English", "Fiction", "Non-Fiction", "Textbooks"},
+	"AB History":                 {"History", "History & Social Studies", "Biographies", "Textbooks"},
 }
 
 // FetchRecommendedBooks retrieves books based on the user's course
@@ -539,7 +538,6 @@ func FetchBorrowedBooks(c *fiber.Ctx) error {
 		})
 	}
 
-
 	type BorrowedBookData struct {
 		BookID         int       `json:"book_id"`
 		Title          string    `json:"title"`
@@ -588,11 +586,6 @@ func FetchBorrowedBooks(c *fiber.Ctx) error {
 		Data:    books,
 	})
 }
-
-
-
-
-
 
 func FetchBorrowedBooksByStatus(c *fiber.Ctx) error {
 	userID := c.Query("user_id")
@@ -934,13 +927,22 @@ func FetchMostPopularBooks(c *fiber.Ctx) error {
 	}
 
 	type PopularBook struct {
-		BookID          int    `json:"book_id"`
-		Title           string `json:"title"`
-		Author          string `json:"author"`
-		Category        string `json:"category"`
-		Picture         string `json:"picture"`
-		BorrowCount     int    `json:"borrow_count"`
-		AvailableCopies int    `json:"available_copies"`
+		BookID          int       `json:"book_id"`
+		Title           string    `json:"title"`
+		Author          string    `json:"author"`
+		Category        string    `json:"category"`
+		ISBN            string    `json:"isbn"`
+		LibrarySection  string    `json:"library_section"`
+		ShelfLocation   string    `json:"shelf_location"`
+		TotalCopies     int       `json:"total_copies"`
+		AvailableCopies int       `json:"available_copies"`
+		BookCondition   string    `json:"book_condition"`
+		Picture         string    `json:"picture"`
+		YearPublished   int       `json:"year_published"`
+		Version         int       `json:"version"`
+		Description     string    `json:"description"`
+		BorrowCount     int       `json:"borrow_count"`
+		CreatedAt       time.Time `json:"created_at"`
 	}
 
 	var popularBooks []PopularBook
@@ -952,12 +954,24 @@ func FetchMostPopularBooks(c *fiber.Ctx) error {
 			b.title,
 			b.author,
 			b.category,
-			b.picture,
+			b.isbn,
+			b.library_section,
+			b.shelf_location,
+			b.total_copies,
 			b.available_copies,
+			b.book_condition,
+			b.picture,
+			b.year_published,
+			b.version,
+			b.description,
+			b.created_at,
 			COUNT(bb.borrow_id) as borrow_count
 		FROM books b
 		LEFT JOIN borrowed_books bb ON b.book_id = bb.book_id
-		GROUP BY b.book_id, b.title, b.author, b.category, b.picture, b.available_copies
+		GROUP BY b.book_id, b.title, b.author, b.category, b.isbn, 
+			b.library_section, b.shelf_location, b.total_copies, 
+			b.available_copies, b.book_condition, b.picture, 
+			b.year_published, b.version, b.description, b.created_at
 		ORDER BY borrow_count DESC
 		LIMIT ?
 	`
