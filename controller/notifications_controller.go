@@ -6,6 +6,7 @@ import (
 	"book_ease_go/notifications"
 	"fmt"
 	"log"
+	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -84,8 +85,16 @@ func FetchUnreadNotifications(c *fiber.Ctx) error {
 func MarkNotificationAsRead(c *fiber.Ctx) error {
 	notificationID := c.Params("notification_id")
 
+	// Convert string ID to uint
+	id, err := strconv.ParseUint(notificationID, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid notification ID",
+		})
+	}
+
 	var notif model.Notification
-	if err := middleware.DBConn.First(&notif, notificationID).Error; err != nil {
+	if err := middleware.DBConn.First(&notif, uint(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": "Notification not found",
 		})

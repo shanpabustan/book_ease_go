@@ -29,6 +29,7 @@ func init() {
 	middleware.DBConn.AutoMigrate(&model.BorrowedBook{})
 	middleware.DBConn.AutoMigrate(&model.Notification{})
 	middleware.DBConn.AutoMigrate(&model.Setting{})
+	middleware.DBConn.AutoMigrate(&model.PasswordResetCode{})
 
 }
 

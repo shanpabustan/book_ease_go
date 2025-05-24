@@ -7,6 +7,7 @@ import (
 	response "book_ease_go/responses"
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
 	"strconv"
 
@@ -998,10 +999,92 @@ func FetchMostPopularBooks(c *fiber.Ctx) error {
 	})
 }
 
-// ResetPassword resets a user's password directly
-func ResetPassword(c *fiber.Ctx) error {
+// RequestPasswordReset handles the initial password reset request
+func RequestPasswordReset(c *fiber.Ctx) error {
 	var request struct {
-		UserID      string `json:"user_id"`
+		Email string `json:"email"`
+	}
+
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Invalid request body",
+			Data:    err.Error(),
+		})
+	}
+
+	// Validate email
+	if request.Email == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Email is required",
+		})
+	}
+
+	// Check if user exists
+	var user model.User
+	if err := middleware.DBConn.Table("users").Where("email = ?", request.Email).First(&user).Error; err != nil {
+		// Don't reveal if email exists or not for security
+		return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
+			RetCode: "200",
+			Message: "If your email is registered, you will receive a reset code",
+		})
+	}
+
+	// Generate a 6-digit code
+	code := fmt.Sprintf("%06d", rand.Intn(1000000))
+	expiresAt := time.Now().Add(3 * time.Minute)
+
+	// Save the reset code
+	resetCode := model.PasswordResetCode{
+		Email:     request.Email,
+		Code:      code,
+		ExpiresAt: expiresAt,
+	}
+
+	if err := middleware.DBConn.Create(&resetCode).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to generate reset code",
+			Data:    err.Error(),
+		})
+	}
+
+	// Send email with reset code
+	subject := "Password Reset Code - Book Ease"
+	body := fmt.Sprintf(`
+		<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
+			<h2 style="color: #008080;">Password Reset Request</h2>
+			<p>You have requested to reset your password. Use the following code to proceed:</p>
+			<div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; letter-spacing: 5px; margin: 20px 0;">
+				<strong>%s</strong>
+			</div>
+			<p>This code will expire in 3 minutes.</p>
+			<p>If you did not request this reset, please ignore this email.</p>
+			<hr style="border: 1px solid #008080;">
+			<p style="color: #666; font-size: 12px;">This is an automated message, please do not reply.</p>
+		</div>
+	`, code)
+
+	if err := notifications.SendEmail(request.Email, subject, body); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to send reset code",
+			Data:    err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
+		RetCode: "200",
+		Message: "If your email is registered, you will receive a reset code",
+	})
+}
+
+// VerifyResetCodeAndResetPassword handles the code verification and password reset
+func VerifyResetCodeAndResetPassword(c *fiber.Ctx) error {
+	var request struct {
+		Email       string `json:"email"`
+		Code        string `json:"code"`
 		NewPassword string `json:"new_password"`
 	}
 
@@ -1014,16 +1097,26 @@ func ResetPassword(c *fiber.Ctx) error {
 	}
 
 	// Validate request fields
-	if request.UserID == "" || request.NewPassword == "" {
+	if request.Email == "" || request.Code == "" || request.NewPassword == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
 			RetCode: "400",
-			Message: "User ID and new password are required",
+			Message: "Email, code, and new password are required",
 		})
 	}
 
-	// Find user in database
+	// Find the reset code
+	var resetCode model.PasswordResetCode
+	if err := middleware.DBConn.Where("email = ? AND code = ? AND used = ? AND expires_at > ?",
+		request.Email, request.Code, false, time.Now()).First(&resetCode).Error; err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+			RetCode: "400",
+			Message: "Invalid or expired reset code",
+		})
+	}
+
+	// Find user
 	var user model.User
-	if err := middleware.DBConn.Table("users").Where("user_id = ?", request.UserID).First(&user).Error; err != nil {
+	if err := middleware.DBConn.Table("users").Where("email = ?", request.Email).First(&user).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
 			RetCode: "404",
 			Message: "User not found",
@@ -1041,13 +1134,16 @@ func ResetPassword(c *fiber.Ctx) error {
 	}
 
 	// Update password in database
-	if err := middleware.DBConn.Table("users").Where("user_id = ?", request.UserID).Update("password", string(hashedPassword)).Error; err != nil {
+	if err := middleware.DBConn.Table("users").Where("email = ?", request.Email).Update("password", string(hashedPassword)).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
 			RetCode: "500",
 			Message: "Failed to update password",
 			Data:    err.Error(),
 		})
 	}
+
+	// Mark reset code as used
+	middleware.DBConn.Model(&resetCode).Update("used", true)
 
 	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
 		RetCode: "200",
