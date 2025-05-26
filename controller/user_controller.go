@@ -19,6 +19,10 @@ import (
 	"gorm.io/gorm"
 )
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 // Register User
 func CreateStudent(c *fiber.Ctx) error {
 	var students []model.User
@@ -379,7 +383,7 @@ func ReserveBook(c *fiber.Ctx) error {
 		Where("status = ? AND expired_at < ?", "Pending", time.Now()).
 		Delete(&model.Reservation{})
 
-	reservation.ReservationID = int(time.Now().UnixNano() % 10000)
+	reservation.ReservationID = int(time.Now().Unix()%1000000000) + rand.Intn(10000)
 	reservation.Status = "Pending"
 	reservation.CreatedAt = time.Now()
 	reservation.Expiry = reservation.PreferredPickupDate.Add(24 * time.Hour)
