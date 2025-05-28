@@ -14,6 +14,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // Data Analytics
@@ -1007,6 +1008,159 @@ func ExportUsers(c *fiber.Ctx) error {
 	return c.Send(fileContent)
 }
 
+// func GetSemesterEndDate(c *fiber.Ctx) error {
+// 	var setting model.Setting
+// 	if err := middleware.DBConn.Where("key = ?", "semester_end_date").First(&setting).Error; err != nil {
+// 		return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
+// 			RetCode: "404",
+// 			Message: "Semester end date not set",
+// 			Data:    nil,
+// 		})
+// 	}
+
+// 	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
+// 		RetCode: "200",
+// 		Message: "Semester end date retrieved successfully",
+// 		Data:    setting,
+// 	})
+// }
+
+// func UpdateSemesterEndDate(c *fiber.Ctx) error {
+// 	type Request struct {
+// 		Value string `json:"value"` // Format: YYYY-MM-DD
+// 	}
+
+// 	var body Request
+// 	if err := c.BodyParser(&body); err != nil {
+// 		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+// 			RetCode: "400",
+// 			Message: "Invalid request body",
+// 			Data:    nil,
+// 		})
+// 	}
+
+// 	// Validate date format
+// 	semesterEndDate, err := time.Parse("2006-01-02", body.Value)
+// 	if err != nil {
+// 		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
+// 			RetCode: "400",
+// 			Message: "Invalid date format. Use YYYY-MM-DD.",
+// 			Data:    nil,
+// 		})
+// 	}
+
+// 	// Start a transaction
+// 	tx := middleware.DBConn.Begin()
+// 	defer func() {
+// 		if r := recover(); r != nil {
+// 			tx.Rollback()
+// 		}
+// 	}()
+
+// 	// Create or update the semester end date setting
+// 	setting := model.Setting{Key: "semester_end_date"}
+// 	if err := tx.FirstOrCreate(&setting, model.Setting{Key: "semester_end_date"}).Error; err != nil {
+// 		tx.Rollback()
+// 		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+// 			RetCode: "500",
+// 			Message: "Failed to set semester end date",
+// 			Data:    err.Error(),
+// 		})
+// 	}
+
+// 	setting.Value = body.Value
+// 	if err := tx.Save(&setting).Error; err != nil {
+// 		tx.Rollback()
+// 		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+// 			RetCode: "500",
+// 			Message: "Failed to update semester end date",
+// 			Data:    err.Error(),
+// 		})
+// 	}
+
+// 	// Get students with 3 or more overdue books
+// 	var studentsWithPenalties []string
+// 	if err := tx.Model(&model.BorrowedBook{}).
+// 		Select("user_id").
+// 		Where("status = ? AND return_date IS NULL", "Overdue").
+// 		Group("user_id").
+// 		Having("COUNT(*) >= ?", 3).
+// 		Pluck("user_id", &studentsWithPenalties).Error; err != nil {
+// 		tx.Rollback()
+// 		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+// 			RetCode: "500",
+// 			Message: "Failed to check student penalties",
+// 			Data:    err.Error(),
+// 		})
+// 	}
+
+// 	// Get current date at midnight for accurate comparison
+// 	now := time.Now()
+// 	currentDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+// 	semesterEndDate = time.Date(semesterEndDate.Year(), semesterEndDate.Month(), semesterEndDate.Day(), 0, 0, 0, 0, semesterEndDate.Location())
+
+// 	var result *gorm.DB
+// 	var action string
+
+// 	// Debug print
+// 	fmt.Printf("Current date: %v\n", currentDate)
+// 	fmt.Printf("Semester end date: %v\n", semesterEndDate)
+// 	fmt.Printf("Is current date after semester end date: %v\n", currentDate.After(semesterEndDate))
+
+// 	// Check if semester end date is in the past
+// 	if currentDate.After(semesterEndDate) || currentDate.Equal(semesterEndDate) {
+// 		fmt.Println("Disabling students - semester end date is in the past or today")
+// 		// Disable students without penalties
+// 		if len(studentsWithPenalties) > 0 {
+// 			result = tx.Model(&model.User{}).
+// 				Where("user_type = ? AND is_active = ? AND user_id NOT IN ?", "Student", true, studentsWithPenalties).
+// 				Update("is_active", false)
+// 		} else {
+// 			result = tx.Model(&model.User{}).
+// 				Where("user_type = ? AND is_active = ?", "Student", true).
+// 				Update("is_active", false)
+// 		}
+// 		action = "disabled"
+// 	} else {
+// 		fmt.Println("Activating students - semester end date is in the future")
+// 		// Activate students without penalties
+// 		if len(studentsWithPenalties) > 0 {
+// 			result = tx.Model(&model.User{}).
+// 				Where("user_type = ? AND is_active = ? AND user_id NOT IN ?", "Student", false, studentsWithPenalties).
+// 				Update("is_active", true)
+// 		} else {
+// 			result = tx.Model(&model.User{}).
+// 				Where("user_type = ? AND is_active = ?", "Student", false).
+// 				Update("is_active", true)
+// 		}
+// 		action = "activated"
+// 	}
+
+// 	if result.Error != nil {
+// 		tx.Rollback()
+// 		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+// 			RetCode: "500",
+// 			Message: fmt.Sprintf("Failed to %s student accounts", action),
+// 			Data:    result.Error.Error(),
+// 		})
+// 	}
+
+// 	if err := tx.Commit().Error; err != nil {
+// 		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+// 			RetCode: "500",
+// 			Message: "Failed to commit transaction",
+// 			Data:    err.Error(),
+// 		})
+// 	}
+
+// 	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
+// 		RetCode: "200",
+// 		Message: fmt.Sprintf("Semester end date updated and %d students %s (excluding students with penalties)", result.RowsAffected, action),
+// 		Data:    setting,
+// 	})
+// }
+
+
 func GetSemesterEndDate(c *fiber.Ctx) error {
 	var setting model.Setting
 	if err := middleware.DBConn.Where("key = ?", "semester_end_date").First(&setting).Error; err != nil {
@@ -1038,16 +1192,22 @@ func UpdateSemesterEndDate(c *fiber.Ctx) error {
 		})
 	}
 
-	// Validate date format
-	if _, err := time.Parse("2006-01-02", body.Value); err != nil {
+	// Parse and normalize semester end date
+	semesterEndDate, err := time.Parse("2006-01-02", body.Value)
+	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
 			RetCode: "400",
 			Message: "Invalid date format. Use YYYY-MM-DD.",
 			Data:    nil,
 		})
 	}
+	semesterEndDate = time.Date(semesterEndDate.Year(), semesterEndDate.Month(), semesterEndDate.Day(), 0, 0, 0, 0, time.Local)
 
-	// Start a transaction
+	// Get current date (normalized)
+	now := time.Now()
+	currentDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+
+	// Begin transaction
 	tx := middleware.DBConn.Begin()
 	defer func() {
 		if r := recover(); r != nil {
@@ -1055,17 +1215,16 @@ func UpdateSemesterEndDate(c *fiber.Ctx) error {
 		}
 	}()
 
-	// Create or update the semester end date setting
-	setting := model.Setting{Key: "semester_end_date"}
+	// Create or update setting
+	var setting model.Setting
 	if err := tx.FirstOrCreate(&setting, model.Setting{Key: "semester_end_date"}).Error; err != nil {
 		tx.Rollback()
 		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
 			RetCode: "500",
-			Message: "Failed to set semester end date",
+			Message: "Failed to retrieve setting",
 			Data:    err.Error(),
 		})
 	}
-
 	setting.Value = body.Value
 	if err := tx.Save(&setting).Error; err != nil {
 		tx.Rollback()
@@ -1076,16 +1235,55 @@ func UpdateSemesterEndDate(c *fiber.Ctx) error {
 		})
 	}
 
-	// Disable all student accounts
-	result := tx.Model(&model.User{}).
-		Where("user_type = ? AND is_active = ?", "Student", true).
-		Update("is_active", false)
+	// Get students with 3 or more overdue books
+	var studentsWithPenalties []string
+	err = tx.Model(&model.BorrowedBook{}).
+		Select("user_id").
+		Where("status = ? AND return_date IS NULL", "Overdue").
+		Group("user_id").
+		Having("COUNT(*) >= ?", 3).
+		Pluck("user_id", &studentsWithPenalties).Error
+	if err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to check student penalties",
+			Data:    err.Error(),
+		})
+	}
+
+	// Debug: log comparisons
+	fmt.Printf("Current date: %v\n", currentDate)
+	fmt.Printf("Semester end date: %v\n", semesterEndDate)
+	fmt.Printf("Is current date after or equal to semester end date? %v\n",
+		currentDate.After(semesterEndDate) || currentDate.Equal(semesterEndDate))
+
+	var result *gorm.DB
+	var action string
+
+	if currentDate.After(semesterEndDate) || currentDate.Equal(semesterEndDate) {
+		fmt.Println("Semester ended: Disabling students (excluding those with penalties)")
+		query := tx.Model(&model.User{}).Where("user_type = ? AND is_active = ?", "Student", true)
+		if len(studentsWithPenalties) > 0 {
+			query = query.Where("user_id NOT IN ?", studentsWithPenalties)
+		}
+		result = query.Update("is_active", false)
+		action = "disabled"
+	} else {
+		fmt.Println("Semester ongoing: Activating students (excluding those with penalties)")
+		query := tx.Model(&model.User{}).Where("user_type = ? AND is_active = ?", "Student", false)
+		if len(studentsWithPenalties) > 0 {
+			query = query.Where("user_id NOT IN ?", studentsWithPenalties)
+		}
+		result = query.Update("is_active", true)
+		action = "activated"
+	}
 
 	if result.Error != nil {
 		tx.Rollback()
 		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
 			RetCode: "500",
-			Message: "Failed to disable student accounts",
+			Message: fmt.Sprintf("Failed to %s student accounts", action),
 			Data:    result.Error.Error(),
 		})
 	}
@@ -1100,71 +1298,11 @@ func UpdateSemesterEndDate(c *fiber.Ctx) error {
 
 	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
 		RetCode: "200",
-		Message: fmt.Sprintf("Semester end date updated and %d students disabled", result.RowsAffected),
+		Message: fmt.Sprintf("Semester end date updated. %d student accounts %s (excluding those with penalties).", result.RowsAffected, action),
 		Data:    setting,
 	})
 }
 
-// CheckSemesterStatus checks if the current date is after semester end date and updates student status accordingly
-func CheckSemesterStatus() {
-	var setting model.Setting
-	if err := middleware.DBConn.Where("key = ?", "semester_end_date").First(&setting).Error; err != nil {
-		fmt.Printf("❌ Error fetching semester end date: %v\n", err)
-		return
-	}
-
-	semesterEndDate, err := time.Parse("2006-01-02", setting.Value)
-	if err != nil {
-		fmt.Printf("❌ Error parsing semester end date: %v\n", err)
-		return
-	}
-
-	// Get current date at midnight for accurate comparison
-	now := time.Now()
-	currentDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	semesterEndDate = time.Date(semesterEndDate.Year(), semesterEndDate.Month(), semesterEndDate.Day(), 0, 0, 0, 0, semesterEndDate.Location())
-
-	// Check if current date is after semester end date
-	if currentDate.After(semesterEndDate) {
-		// Disable all active students
-		result := middleware.DBConn.Model(&model.User{}).
-			Where("user_type = ? AND is_active = ?", "Student", true).
-			Update("is_active", false)
-
-		if result.Error != nil {
-			fmt.Printf("❌ Error disabling students: %v\n", result.Error)
-		} else if result.RowsAffected > 0 {
-			fmt.Printf("✅ Disabled %d students after semester end\n", result.RowsAffected)
-		}
-	} else {
-		// Enable all students if we're before semester end date
-		result := middleware.DBConn.Model(&model.User{}).
-			Where("user_type = ? AND is_active = ?", "Student", false).
-			Update("is_active", true)
-
-		if result.Error != nil {
-			fmt.Printf("❌ Error enabling students: %v\n", result.Error)
-		} else if result.RowsAffected > 0 {
-			fmt.Printf("✅ Enabled %d students for new semester\n", result.RowsAffected)
-		}
-	}
-}
-
-// StartSemesterChecker will start a background task that checks semester status every hour
-func StartSemesterChecker() {
-	ticker := time.NewTicker(5 * time.Second) // Changed from 24 * time.Hour to 1 * time.Hour
-	defer ticker.Stop()
-
-	// Run initial check
-	CheckSemesterStatus()
-
-	for {
-		select {
-		case <-ticker.C:
-			CheckSemesterStatus()
-		}
-	}
-}
 
 func UnblockUser(c *fiber.Ctx) error {
 	userID := c.Params("userID")

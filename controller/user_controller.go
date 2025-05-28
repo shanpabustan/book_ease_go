@@ -139,20 +139,37 @@ func LoginUser(c *fiber.Ctx) error {
 	if !users.IsActive {
 		// Check if this is a student account
 		if users.UserType == "Student" {
-			// Check if semester end date is set
-			var setting model.Setting
-			if err := middleware.DBConn.Where("key = ?", "semester_end_date").First(&setting).Error; err == nil {
-				// If semester end date exists, return semester end message
+			// Check for penalty-related blocks first
+			var overdueCount int64
+			if err := middleware.DBConn.Model(&model.BorrowedBook{}).
+				Where("user_id = ? AND status = ? AND return_date IS NULL", users.UserID, "Overdue").
+				Count(&overdueCount).Error; err == nil && overdueCount >= 3 {
 				return c.Status(fiber.StatusForbidden).JSON(response.ResponseModel{
 					RetCode: "403",
-					Message: "Your account is currently disabled due to semester end.",
+					Message: fmt.Sprintf("Your account is blocked due to %d unreturned overdue books.", overdueCount),
 				})
 			}
+
+			// Then check if semester end date is set
+			var setting model.Setting
+			if err := middleware.DBConn.Where("key = ?", "semester_end_date").First(&setting).Error; err == nil {
+				// Parse the semester end date
+				semesterEndDate, err := time.Parse("2006-01-02", setting.Value)
+				if err == nil {
+					// Format the date for display
+					formattedDate := semesterEndDate.Format("January 2, 2006")
+					return c.Status(fiber.StatusForbidden).JSON(response.ResponseModel{
+						RetCode: "406",
+						Message: fmt.Sprintf("Your account is currently disabled. The semester ended on %s.", formattedDate),
+					})
+				}
+			}
 		}
-		// For other cases (like penalty), return the original message
+
+		// For other cases or if no specific reason is found
 		return c.Status(fiber.StatusForbidden).JSON(response.ResponseModel{
 			RetCode: "403",
-			Message: "The account is blocked due to penalty.",
+			Message: "Your account is currently disabled. Please contact the library administrator for assistance.",
 		})
 	}
 

@@ -54,7 +54,7 @@ func main() {
 
 	go controller.StartPenaltyChecker()
 	go controller.StartReservationChecker()
-	go controller.StartSemesterChecker()
+	
 
 	notifications.StartOverdueCheckerCron()
 	notifications.InitializeEmailConfig()
