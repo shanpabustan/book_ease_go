@@ -367,7 +367,6 @@ func DisableAllStudents(c *fiber.Ctx) error {
 }
 
 // Admin - Approve reservation and create borrowed book record (Picked Up remarks).
-// ApproveReservation function with notifications
 func ApproveReservation(c *fiber.Ctx) error {
 	reservationIDStr := c.Params("reservation_id")
 	reservationID, err := strconv.Atoi(reservationIDStr)
@@ -1048,8 +1047,18 @@ func UpdateSemesterEndDate(c *fiber.Ctx) error {
 		})
 	}
 
+	// Start a transaction
+	tx := middleware.DBConn.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Create or update the semester end date setting
 	setting := model.Setting{Key: "semester_end_date"}
-	if err := middleware.DBConn.FirstOrCreate(&setting, model.Setting{Key: "semester_end_date"}).Error; err != nil {
+	if err := tx.FirstOrCreate(&setting, model.Setting{Key: "semester_end_date"}).Error; err != nil {
+		tx.Rollback()
 		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
 			RetCode: "500",
 			Message: "Failed to set semester end date",
@@ -1058,7 +1067,8 @@ func UpdateSemesterEndDate(c *fiber.Ctx) error {
 	}
 
 	setting.Value = body.Value
-	if err := middleware.DBConn.Save(&setting).Error; err != nil {
+	if err := tx.Save(&setting).Error; err != nil {
+		tx.Rollback()
 		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
 			RetCode: "500",
 			Message: "Failed to update semester end date",
@@ -1066,57 +1076,94 @@ func UpdateSemesterEndDate(c *fiber.Ctx) error {
 		})
 	}
 
-	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
-		RetCode: "200",
-		Message: "Semester end date updated successfully",
-		Data:    setting,
-	})
-}
+	// Disable all student accounts
+	result := tx.Model(&model.User{}).
+		Where("user_type = ? AND is_active = ?", "Student", true).
+		Update("is_active", false)
 
-func EndOfSemester(c *fiber.Ctx) error {
-	var setting model.Setting
-	if err := middleware.DBConn.Where("key = ?", "semester_end_date").First(&setting).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(response.ResponseModel{
-			RetCode: "404",
-			Message: "Semester end date not set",
-			Data:    nil,
+	if result.Error != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to disable student accounts",
+			Data:    result.Error.Error(),
 		})
 	}
 
-	semesterEndDate, err := time.Parse("2006-01-02", setting.Value)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(response.ResponseModel{
-			RetCode: "400",
-			Message: "Invalid semester end date format",
+	if err := tx.Commit().Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
+			RetCode: "500",
+			Message: "Failed to commit transaction",
 			Data:    err.Error(),
 		})
 	}
 
-	// Only proceed if today is on or after the end of semester
-	if time.Now().After(semesterEndDate) || time.Now().Equal(semesterEndDate) {
-		// Disable all active students
-		if err := middleware.DBConn.Model(&model.User{}).
-			Where("user_type = ? AND is_active = ?", "Student", true).
-			Update("is_active", false).Error; err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(response.ResponseModel{
-				RetCode: "500",
-				Message: "Failed to disable students",
-				Data:    err.Error(),
-			})
-		}
-
-		return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
-			RetCode: "200",
-			Message: "Students have been disabled after semester end",
-			Data:    nil,
-		})
-	}
-
 	return c.Status(fiber.StatusOK).JSON(response.ResponseModel{
 		RetCode: "200",
-		Message: "Semester has not ended yet. No students were disabled.",
-		Data:    nil,
+		Message: fmt.Sprintf("Semester end date updated and %d students disabled", result.RowsAffected),
+		Data:    setting,
 	})
+}
+
+// CheckSemesterStatus checks if the current date is after semester end date and updates student status accordingly
+func CheckSemesterStatus() {
+	var setting model.Setting
+	if err := middleware.DBConn.Where("key = ?", "semester_end_date").First(&setting).Error; err != nil {
+		fmt.Printf("❌ Error fetching semester end date: %v\n", err)
+		return
+	}
+
+	semesterEndDate, err := time.Parse("2006-01-02", setting.Value)
+	if err != nil {
+		fmt.Printf("❌ Error parsing semester end date: %v\n", err)
+		return
+	}
+
+	// Get current date at midnight for accurate comparison
+	now := time.Now()
+	currentDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	semesterEndDate = time.Date(semesterEndDate.Year(), semesterEndDate.Month(), semesterEndDate.Day(), 0, 0, 0, 0, semesterEndDate.Location())
+
+	// Check if current date is after semester end date
+	if currentDate.After(semesterEndDate) {
+		// Disable all active students
+		result := middleware.DBConn.Model(&model.User{}).
+			Where("user_type = ? AND is_active = ?", "Student", true).
+			Update("is_active", false)
+
+		if result.Error != nil {
+			fmt.Printf("❌ Error disabling students: %v\n", result.Error)
+		} else if result.RowsAffected > 0 {
+			fmt.Printf("✅ Disabled %d students after semester end\n", result.RowsAffected)
+		}
+	} else {
+		// Enable all students if we're before semester end date
+		result := middleware.DBConn.Model(&model.User{}).
+			Where("user_type = ? AND is_active = ?", "Student", false).
+			Update("is_active", true)
+
+		if result.Error != nil {
+			fmt.Printf("❌ Error enabling students: %v\n", result.Error)
+		} else if result.RowsAffected > 0 {
+			fmt.Printf("✅ Enabled %d students for new semester\n", result.RowsAffected)
+		}
+	}
+}
+
+// StartSemesterChecker will start a background task that checks semester status every hour
+func StartSemesterChecker() {
+	ticker := time.NewTicker(5 * time.Second) // Changed from 24 * time.Hour to 1 * time.Hour
+	defer ticker.Stop()
+
+	// Run initial check
+	CheckSemesterStatus()
+
+	for {
+		select {
+		case <-ticker.C:
+			CheckSemesterStatus()
+		}
+	}
 }
 
 func UnblockUser(c *fiber.Ctx) error {
@@ -1470,5 +1517,3 @@ func StartReservationChecker() {
 		}
 	}
 }
-
-

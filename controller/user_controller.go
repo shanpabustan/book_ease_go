@@ -137,6 +137,19 @@ func LoginUser(c *fiber.Ctx) error {
 	}
 
 	if !users.IsActive {
+		// Check if this is a student account
+		if users.UserType == "Student" {
+			// Check if semester end date is set
+			var setting model.Setting
+			if err := middleware.DBConn.Where("key = ?", "semester_end_date").First(&setting).Error; err == nil {
+				// If semester end date exists, return semester end message
+				return c.Status(fiber.StatusForbidden).JSON(response.ResponseModel{
+					RetCode: "403",
+					Message: "Your account is currently disabled due to semester end.",
+				})
+			}
+		}
+		// For other cases (like penalty), return the original message
 		return c.Status(fiber.StatusForbidden).JSON(response.ResponseModel{
 			RetCode: "403",
 			Message: "The account is blocked due to penalty.",

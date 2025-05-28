@@ -60,7 +60,7 @@ func AppRoutes(app *fiber.App) {
 	admin.Get("/export-users", controller.ExportUsers)
 	admin.Get("/semester/end-date", controller.GetSemesterEndDate)
 	admin.Put("/semester/end-date", controller.UpdateSemesterEndDate)
-	admin.Post("/semester/auto-disable-students", controller.EndOfSemester)
+	//admin.Post("/semester/auto-disable-students", controller.EndOfSemester)
 	admin.Post("/edit-admin", controller.EditAdminUser)
 	admin.Get("/get-borrowed-books", controller.GetAllBorrowedBooks)
 	admin.Put("/unblock-student/:userID", controller.UnblockUser)
